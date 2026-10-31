@@ -228,6 +228,21 @@ function App() {
       state?.players.filter((p) => Math.round(p.score * 10) === best) || [],
     liveTime = state?.live?.time ?? 0;
   const connectionDelayed = live && now - lastStateAt.current > 2500;
+  const controlsSynced = Boolean(
+    own &&
+    Math.abs(
+      Math.atan2(Math.sin(own.angle - angle), Math.cos(own.angle - angle)),
+    ) < 1e-6 &&
+    own.generators.length === generators.length &&
+    generators.every((g, i) => {
+      const accepted = own.generators[i];
+      return (
+        accepted.kind === g.kind &&
+        Math.abs(accepted.x - g.x) < 1e-6 &&
+        Math.abs(accepted.y - g.y) < 1e-6
+      );
+    }),
+  );
   return (
     <main className={active ? "playing" : ""}>
       <header>
@@ -552,6 +567,13 @@ function App() {
                       ● firing continuously · controls stay live
                     </p>
                   )}
+                  <p
+                    className="fine control-sync"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {controlsSynced ? "controls synced" : "sending controls…"}
+                  </p>
                   <div className="effects">
                     {Object.entries(own?.effects ?? {})
                       .filter(([, until]) => until > liveTime)

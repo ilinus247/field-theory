@@ -15,8 +15,11 @@ export class ControlSender {
   ) {
     this.socket = privateSocket;
     this.current = privateCurrent;
-    this.schedule = schedule;
-    this.cancel = cancel;
+    // Keep host timers as plain calls. Calling window.setTimeout as an
+    // instance method supplies the wrong receiver and throws in browsers.
+    this.schedule = (handler, delay, ...args) =>
+      schedule(handler, delay, ...args);
+    this.cancel = (timer) => cancel(timer);
   }
   private socket: () => SocketLike | null;
   private current: (data: any) => boolean;

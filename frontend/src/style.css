@@ -845,3 +845,8 @@ footer button {
 .pickup-notice {
   pointer-events: none;
 }
+
+.control-sync {
+  grid-column: 1/-1;
+  color: #7a896b;
+}
