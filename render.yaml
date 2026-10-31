@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: field-theory
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --ws-max-size 4096
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: ALLOWED_ORIGINS
+        value: https://field-theory.packedbasil2.chatgpt.site,http://localhost:5173

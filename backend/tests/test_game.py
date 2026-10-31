@@ -1,0 +1,23 @@
+import math
+import pytest
+from app.game import Room,Invalid,validate_config
+
+def test_validation():
+    for config in [dict(angle=float('nan'),generators=[]),dict(angle=0,generators=[dict(kind='positive',x=.12,y=.5)]),dict(angle=0,generators=[dict(kind='coil',x=.5,y=.5)]*2),dict(angle=0,generators=[dict(kind='positive',x=-1,y=.5)])]:
+        with pytest.raises(Invalid): validate_config(config,2)
+    assert validate_config(dict(angle=0,generators=[]),2)==(0,[])
+
+def test_room_and_stale_round():
+    r=Room('ABCDE');a=r.add('ada');b=r.add('ben');assert r.add('ada',a['token']) is a
+    r.action(a,{'type':'start'});assert r.round==1 and r.phase=='construction'
+    with pytest.raises(Invalid):r.action(b,dict(type='ready',round=0,angle=0,generators=[]))
+    r.action(b,dict(type='ready',round=1,angle=math.pi,generators=[]));assert b['ready']
+    assert 'token' not in str(r.public())
+    r.phase='finished';r.round=5;a['score']=3;r.action(a,{'type':'rematch'});assert r.round==1 and a['score']==0
+
+def test_limits_and_host():
+    r=Room('ABCDE');p=r.add('a')
+    with pytest.raises(Invalid):r.action(p,{'type':'start'})
+    for name in ['b','c','d']:r.add(name)
+    with pytest.raises(Invalid):r.add('e')
+    with pytest.raises(Invalid):r.action(r.players[1],{'type':'start'})
