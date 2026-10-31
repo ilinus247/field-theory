@@ -1,37 +1,54 @@
 # FIELD THEORY
 
-A minimalist, account-free multiplayer game of invisible forces. Arrange electric charges and magnetic coils, choose an angle, and let the Lorentz force decide the trajectory.
+A minimalist, account-free multiplayer game of invisible forces. Steer a continuous charged-particle stream by aiming your cannon and moving electromagnetic fields while the action unfolds.
 
-**Source:** https://github.com/ilinus247/field-theory  
-**Public frontend:** https://field-theory.packedbasil2.chatgpt.site  
-**Backend:** https://field-theory.onrender.com
+**[Play FIELD THEORY](https://field-theory.packedbasil2.chatgpt.site)** · **[Public MIT source](https://github.com/ilinus247/field-theory)**  
+Backend: https://field-theory.onrender.com
 
-![FIELD THEORY game interface](docs/screenshots/game.jpg)
+![FIELD THEORY](docs/screenshots/game.jpg)
 
-## Play
+## Rules and controls
 
-Create a room with your display name, then share its five-letter code or URL with 1–3 friends. The host starts once two players are connected.
+Create a room with your display name and share its code or URL with 1–3 friends. The host starts when at least two players are connected. There are **three rounds**, each with **8 seconds of setup**, **60 seconds of live play**, and a short results break. Ready players can start early.
 
-Each match has five rounds:
+Your cannon fires automatically throughout live play. Aim with the slider, or select **aim cannon** and drag anywhere in the arena. Select a field type and tap to place; drag your own fields to move them and use their × buttons to remove them. You may add, move, and remove fields throughout the minute. Two field slots per player, with at most one magnetic coil. Protected reactor circles reject placement.
 
-1. **Construct — 20 seconds:** place up to two generators, with at most one magnetic coil. Drag fields to move them, use their × buttons to remove them, and use the angle slider to aim. Protected reactor zones reject placement. Ready players launch early when everyone is ready.
-2. **Simulate — 8 seconds:** every reactor launches one positive particle at fixed speed. All fields affect all particles. Configurations are locked.
-3. **Results — 4 seconds:** each opposing reactor hit earns one point. A particle stops at its first reactor or boundary. Friendly hits earn nothing. Most points after five rounds wins; ties share victory. The host can start a rematch.
+- **Red +** repels positive particles.
+- **Blue −** attracts positive particles.
+- **Violet ⊙** curves moving particles.
+- All players share the combined fields. Rival positive streams weakly repel one another.
+- Solid dark outlines and **you** labels identify your fields. Player-number badges and owner labels identify every generator without confusing ownership with charge polarity.
 
-Red **+** repels; blue **−** attracts; violet **⊙** curves moving particles. Tap or click to place. Drag to adjust. Mouse and touch use the same controls. On phones, the controls appear below the arena.
+Keep your stream hitting opposing reactors to earn **pressure seconds**. The server maintains contact for 0.23 seconds after an impact to bridge the normal spacing between emitted particles. Continuous contact earns one point per second per opposing reactor. Friendly hits score nothing; shields block incoming scoring. Double score increases the rate to two. Scores accumulate across rounds; displayed tenths determine ties. The host can start a rematch.
+
+The in-game **how to play** button opens the full rules and booster guide without leaving the room.
+
+### Labeled boosters
+
+A pickup appears after six seconds, then approximately every eight seconds. At most two are present. Hit one with a particle to collect it; it disappears immediately. Pickups expire after ten seconds. Effects last six seconds, refresh instead of stacking, and reset each round.
+
+| Pickup | Target | Effect |
+|---|---|---|
+| rapid fire | collector | emission interval 0.2 → 0.1 seconds |
+| double score | collector | twice the pressure score |
+| shield | collector | incoming contact cannot score |
+| slow rivals | other players | doubles their emission interval |
+| weak fields | other players | reduces their generators to 45% strength |
+| aim drift | other players | sinusoidal cannon wobble of about ±8° |
 
 ## Architecture
 
-- **Frontend:** React, TypeScript, Vite, and HTML Canvas. Canvas draws electric streamlines, coil rings, fading trails, and impact ripples. Streamlines represent the electric field; magnetic rings indicate coil locality rather than fictitious magnetic electric streamlines.
-- **Backend:** Python, FastAPI, Uvicorn, and WebSockets; one process, independent in-memory rooms, no database or login.
-- **Authority:** the server validates placement and angles, locks a round, computes trajectories once, and broadcasts the same frames and events to every client. A future server start timestamp and ping-based clock-offset estimate align playback. Clients interpolate, never score locally.
-- **Protocol:** explicit phases, monotonically increasing state sequences, round IDs, per-room locks, bounded messages/rates, and random reconnection tokens. Refresh replaces the old socket without creating another player. Host ownership transfers to a connected player. Disconnected players do not block the construction timer.
+**Frontend:** React, TypeScript, Vite, HTML Canvas, responsive CSS, mouse/pointer/touch controls, a native modal rules dialog, stronger electric streamlines, magnetic rings, owner labels, interpolated live particles and trails, pickup labels, and effect countdowns.
 
-Physics is separate from networking (`backend/app/physics`); rule validation lives in `game.py`; rendering lives in `frontend/src/Arena.tsx`.
+**Backend:** Python, FastAPI, Uvicorn, WebSockets, and **JAX CPU**. One process manages independent rooms with in-memory state. No database or accounts.
 
-## Physics
+**Authority:** the server accepts bounded live control updates, advances the shared physics, detects swept collisions and pickups, applies effects, and awards time-based scores. At 10 Hz it broadcasts a sequenced authoritative snapshot containing particle slots, positions, owner indices, contact, effects, and scores. Clients interpolate snapshots with a 100 ms visual buffer; they never compute authoritative outcomes. Controls are coalesced to 12.5 Hz. Match, round, and monotonically increasing input sequence checks reject stale controls, including after rematches.
 
-Normalized arena coordinates use gameplay units with q/m = 1:
+**Rooms:** 2–4 players, 16-room cap, random codes and private reconnect tokens, tab-scoped identities that survive refresh, host transfer, input size/rate limits, and five-minute cleanup of abandoned rooms. Disconnected cannons stop emitting. Empty-room simulation pauses to save CPU; reconnecting resumes it. A process restart discards all rooms.
+
+## Physics and JAX
+
+Normalized coordinates use gameplay units and q/m = 1:
 
 ```text
 F = q(E + v × B)
@@ -39,17 +56,15 @@ Eᵢ(r) = kQᵢ(r − rᵢ) / (|r − rᵢ|² + ε²)^(3/2)
 Bz(r) = B₀ exp(−|r − rc|² / (2σ²))
 ```
 
-Parameters are centralized in `simulation.py`: dt = 1/240 s, ε = 0.065, k = 0.018, B₀ = 5, σ = 0.16, initial speed = 0.28, maximum speed = 1.4. Electric acceleration and aggregate magnetic field are bounded. The Boris update splits electric acceleration into two half-kicks around a norm-preserving magnetic velocity rotation. Position advances with the resulting velocity. This is a simplified game integrator, not a Maxwell solver. Swept segment-circle tests prevent fast particles tunneling through reactors. Trajectories are recorded at 30 Hz.
+The live engine in `backend/app/physics/streams.py` uses **120 Hz Boris integration**, compiled with `jax.jit`. `jax.vmap` batches field evaluation; `jax.lax.scan` advances twelve fixed steps per 100 ms batch. The fixed pool has **128 slots (32 per player)** and eight generator slots, avoiding recompilation as the arena changes. Particle lifetime is three seconds; maximum normal rapid fire fits in the pool. Float64, softened fields, acceleration/speed bounds, and swept segment-circle collision checks keep behavior finite and prevent tunneling.
 
-### JAX CPU implementation
+Opposing streams interact through a softened pairwise electric repulsion with k = 0.000035 and softening 0.025. Same-owner particles do not repel one another; this is an intentional stream-coherence/gameplay approximation. There are no hard particle-particle collisions. External fields retain k = 0.018, ε = 0.065, B₀ = 5, σ = 0.16. Initial particle speed is 0.42, capped at 1.4. Magnetic-only Boris rotation preserves speed to numerical precision. These are gameplay approximations, not a Maxwell-equation solver.
 
-JAX is the default production physics engine. The compiled `jax.jit` kernel runs the full eight seconds in a `jax.lax.scan`; `jax.vmap` batches field evaluation across four particle slots. Eight fixed generator slots and four reactor slots avoid recompilation as players and placements change. Inactive slots are masked. CPU-only execution and float64 preserve numerical accuracy. The server warms the compiled kernel during startup before accepting gameplay. `/health` reports the engine, physics initialization duration, and peak process memory.
-
-The NumPy reference uses the same equations, constants, Boris update, collision rules, and recording cadence. It is available through explicit `PHYSICS_ENGINE=numpy` configuration only if measured deployment problems require a fallback. There is no silent downgrade.
+The historical single-projectile NumPy/JAX modules remain as tested numerical references; **live multiplayer always uses JAX**, with no silent downgrade. `/health` reports the live engine, compilation time, peak process memory, and most recent room tick time.
 
 ## Local development
 
-Python 3.10+ (deployment targets 3.12), Node 22+, and npm are required.
+Use Python 3.10+ (deployment targets 3.12) and Node 22+.
 
 ```sh
 python3 -m venv .venv
@@ -59,59 +74,51 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-In a second terminal from the repository root:
+From a second terminal at repository root:
 
 ```sh
 npm --prefix frontend ci
 npm --prefix frontend run dev
 ```
 
-Open http://localhost:5173. Each browser tab has an independent player identity in session storage. Refreshing the tab restores that identity.
+Open http://localhost:5173 in two tabs, choose different names, and join the same room. Each tab has its own identity in session storage. Refresh preserves identity; copying a tab may copy that identity and replace its old socket.
 
-## Tests and production build
+## Tests
 
 ```sh
-pip install pytest httpx
+pip install pytest httpx websockets
 (cd backend && python -m pytest -q)
 npm --prefix frontend run build
+python tests/live_smoke.py
 ```
 
-For a real public WSS five-round test: `pip install websockets && python tests/live_smoke.py`. This creates temporary test rooms and verifies identical playback, scoring, ties, rematches, and refresh identity.
+The automated suite covers physics, energy conservation, pairwise repulsion, bounded deterministic emission, sustained scoring, shields and double score, swept pickup collection, all six booster targets, live controls, stale input, validation, multiplayer snapshots, three-round progression, rematches, reconnection, and independent rooms. The live smoke test runs three actual 60-second rounds over WSS and compares authoritative snapshots from two clients while changing controls during play. It creates disposable test rooms and takes a few minutes.
 
-CI runs backend tests and the frontend production build. Tests cover field polarity, magnetic curvature and energy preservation, finite integration, determinism, swept collision detection, validation, room limits, stale rounds, independent rooms, five-round scoring/ties, rematches, malformed messages, and reconnect identity.
-
-The network suite uses actual FastAPI WebSocket sessions through TestClient; it is separate from browser interaction checks. It accelerates simulation/results deadlines to avoid waiting through each playback. It does not by itself prove public WSS connectivity or real-device mobile behavior.
+[Verification record](docs/VERIFICATION.md) distinguishes executed checks from unverified cases. CI runs backend tests and the TypeScript/Vite production build.
 
 ## Deployment
 
-The requested frontend publisher is **ChatGPT Sites**. `.openai/hosting.json` points to the generated `dist` static build. Build with the public backend URL before packaging. Sites source synchronization uses its own provider repository; the public GitHub repository contains the same application source.
+The frontend is published through **ChatGPT Sites**, as requested. `.openai/hosting.json` identifies the existing Site and its top-level `dist` build. Build with `VITE_BACKEND_URL` set to the public HTTPS backend before packaging. Sites maintains a managed source mirror; GitHub is the public MIT source of record. Publish both from the same release revision.
 
-The backend is configured by `render.yaml`: **Free** web service, one Uvicorn worker, port supplied by Render, `/health` health check, no database or disks. Import the public GitHub repository in Render and explicitly verify the free plan before deployment. `ALLOWED_ORIGINS` must include the exact public frontend origin. Never enable paid upgrades or add payment details for this project.
+The backend is a **Render Free** web service built from GitHub `main`. `render.yaml` records the build, one-worker startup command, `/health`, and allowed frontend origin. Bind to `0.0.0.0` and Render's supplied `$PORT`. No database, disk, or paid resources are needed. The public-URL Git import requires manual deployment; connect Render's GitHub integration for future automatic deploys. Always verify the live deployment's commit.
 
-Render is configured for automatic deployment from `main`, but no webhook-triggered deployment was observed after the public-repository import. Connect the GitHub integration in Render for future automatic updates; until verified, compare the Render deployment commit with GitHub and redeploy explicitly when needed. Sites versions are published separately from the same source checkout.
-
-A `vercel.json` configuration is also supplied if Vercel Hobby is used as an alternative frontend host. It must import this personal GitHub repository and set `VITE_BACKEND_URL` before building.
-
-### Environment variables
+A `vercel.json` remains available as an alternative frontend deployment configuration; the current frontend uses Sites.
 
 | Variable | Where | Meaning |
 |---|---|---|
-| `VITE_BACKEND_URL` | frontend build | Public HTTPS backend origin; defaults to localhost:8000 for development |
-| `ALLOWED_ORIGINS` | backend | Comma-separated allowed frontend origins, without trailing slashes |
-| `PORT` | backend | Host-provided listening port |
-| `PHYSICS_ENGINE` | backend | `jax` by default; explicit `numpy` fallback |
+| `VITE_BACKEND_URL` | frontend build | public HTTPS backend origin; local default is http://localhost:8000 |
+| `ALLOWED_ORIGINS` | backend | comma-separated exact allowed frontend origins |
+| `PORT` | backend | Render-provided listening port |
+| `JAX_PLATFORMS` | backend | `cpu` |
+| `OMP_NUM_THREADS` | backend | `1` |
 
-See `.env.example`. No API keys are required by the game. Hosting/repository credentials belong in platform settings, never source code.
+See `.env.example`. The backend URL is intentionally public and grants no administrative access. Hosting credentials and player reconnect tokens must stay private and must never be committed.
 
-## Verification
+## Limits and costs
 
-See [the executed verification record](docs/VERIFICATION.md). The production JAX backend completed a real five-round WSS match with identical outcomes for both clients, a tie, rematch, and identity recovery. Local automated tests and Linux CI cover physics and room rules. Physical-phone testing and a forced idle cold-start cycle remain unverified.
+Render Free sleeps after idle periods, can take about a minute to wake, and discards rooms on restart. The client shows connection state and retries. JAX warms before the service accepts gameplay. CPU and monthly bandwidth limits still apply; sustained multi-room load is not certified. Pairwise interactions and particle counts are deliberately bounded. Physical phones and a forced idle-wake cycle still require additional verification.
 
-## Limits and operations
-
-Render Free has limited CPU/RAM, shared monthly allowances, idle spin-down, and approximately one-minute cold starts. The frontend displays connection state and retries automatically. Rooms disappear after restart, redeployment, or spin-down. An expired room code requires a new room. This MVP caps active rooms at 64 and room size at four. Empty rooms expire after five minutes. No persistence, spectators, projectile collisions, sound, or trajectory previews are included.
-
-Each tab stores its own active player identity in session storage. Do not share its reconnection token. Anyone with a room code can join an unstarted room. Rate limits are per socket; this is hobby-scale abuse resistance, not a hardened tournament service.
+The service remains on the Free plan. No payment information, paid upgrade, database, disk, GPU, or domain was added. Do not enable paid overages or upgrades for this project.
 
 ## License
 

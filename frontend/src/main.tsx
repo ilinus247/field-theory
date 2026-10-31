@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Arena } from "./Arena";
-import { colors, type State, type Generator } from "./types";
+import { Rules } from "./Rules";
+import { colors, effectNames, type State, type Generator } from "./types";
 import "./style.css";
 const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 function App() {
@@ -16,109 +17,127 @@ function App() {
     [kind, setKind] = useState<Generator["kind"]>("positive"),
     [generators, setGenerators] = useState<Generator[]>([]),
     [angle, setAngle] = useState(0),
+    [mode, setMode] = useState<"place" | "aim">("aim"),
     [offset, setOffset] = useState(0),
     [now, setNow] = useState(Date.now()),
-    [copied, setCopied] = useState(false);
+    [copied, setCopied] = useState(false),
+    [rules, setRules] = useState(false);
   const ws = useRef<WebSocket | null>(null),
-    reconnect = useRef<ReturnType<typeof setTimeout> | null>(null),
     intent = useRef<any>(null),
+    retry = useRef<ReturnType<typeof setTimeout> | null>(null),
+    configTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    queued = useRef<any>(null),
     sequence = useRef(-1),
-    round = useRef(0),
-    phase = useRef(""),
+    inputSeq = useRef(Date.now() * 1000),
+    current = useRef<State | null>(null),
     angleRef = useRef(angle),
-    genRef = useRef(generators);
+    genRef = useRef(generators),
+    playerId = useRef("");
+  current.current = state;
   angleRef.current = angle;
   genRef.current = generators;
-  const queuedConfig = useRef<any>(null);
-  const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const send = (v: any) => {
-    // Coalesce pointer/slider updates to 10 Hz while preserving the final position.
-    // Ready carries the complete configuration and cancels pending edits.
-    if (v.type === "configure") {
-      queuedConfig.current = v;
+  const send = (data: any) => {
+    if (["configure", "ready"].includes(data.type))
+      data = { ...data, input_seq: ++inputSeq.current };
+    if (data.type === "configure") {
+      queued.current = data;
       if (!configTimer.current)
         configTimer.current = setTimeout(() => {
           configTimer.current = null;
           if (
             ws.current?.readyState === WebSocket.OPEN &&
-            phase.current === "construction"
+            ["construction", "simulation"].includes(
+              current.current?.phase ?? "",
+            )
           )
-            ws.current.send(JSON.stringify(queuedConfig.current));
-        }, 100);
+            ws.current.send(JSON.stringify(queued.current));
+        }, 80);
       return;
     }
-    if (v.type === "ready" && configTimer.current) {
+    if (data.type === "ready" && configTimer.current) {
       clearTimeout(configTimer.current);
       configTimer.current = null;
     }
     if (ws.current?.readyState === WebSocket.OPEN)
-      ws.current.send(JSON.stringify(v));
+      ws.current.send(JSON.stringify(data));
   };
   const connect = () => {
     if (!intent.current) return;
     setStatus("connecting · waking server");
     fetch(API + "/health").catch(() => {});
-    const sock = new WebSocket(API.replace(/^http/, "ws") + "/ws");
-    ws.current = sock;
-    sock.onopen = () => {
+    const socket = new WebSocket(API.replace(/^http/, "ws") + "/ws");
+    ws.current = socket;
+    socket.onopen = () => {
       setStatus("connected");
       send(intent.current);
     };
-    sock.onmessage = (e) => {
+    socket.onmessage = (e) => {
       const d = JSON.parse(e.data);
       if (d.type === "identity") {
+        playerId.current = d.id;
         setMe(d.id);
         setCode(d.code);
-        intent.current = { type: "join", code: d.code, name, token: d.token };
+        intent.current = {
+          type: "join",
+          code: d.code,
+          name: intent.current.name,
+          token: d.token,
+        };
         sessionStorage.setItem("ft-session", JSON.stringify(intent.current));
         history.replaceState(null, "", "?room=" + d.code);
         sequence.current = -1;
       }
       if (d.type === "state" && d.state.seq > sequence.current) {
-        const s: State = d.state;
+        const s: State = d.state,
+          old = current.current;
         sequence.current = s.seq;
+        const p = s.players.find((p) => p.id === playerId.current);
+        if (
+          !old ||
+          old.code !== s.code ||
+          old.round !== s.round ||
+          old.match !== s.match ||
+          old.phase !== s.phase
+        ) {
+          if (p) {
+            setGenerators(p.generators);
+            genRef.current = p.generators;
+            setAngle(p.angle);
+            angleRef.current = p.angle;
+          }
+        }
+        current.current = s;
         setState(s);
         setOffset(s.server_time - Date.now() / 1000);
-        if (round.current !== s.round || phase.current !== s.phase) {
-          const id = sessionStorage.getItem("ft-id");
-          const own = s.players.find((p) => p.id === id);
-          if (own) {
-            setGenerators(own.generators);
-            setAngle(own.angle);
-          }
-          round.current = s.round;
-          phase.current = s.phase;
-        }
       }
-      if (d.type === "identity") sessionStorage.setItem("ft-id", d.id);
       if (d.type === "error") {
         setError(d.message);
-        if (/not found|full|started|name/.test(d.message)) {
+        if (
+          /not found|room is full|already started|use a name/.test(d.message)
+        ) {
           intent.current = null;
           sessionStorage.removeItem("ft-session");
           setState(null);
+          current.current = null;
         }
       }
-      if (d.type === "pong") {
-        const t = Date.now() / 1000;
-        setOffset(d.server_time - (d.client_time + t) / 2);
-      }
+      if (d.type === "pong")
+        setOffset(d.server_time - (d.client_time + Date.now() / 1000) / 2);
     };
-    sock.onclose = (e) => {
-      setStatus("reconnecting");
+    socket.onclose = (e) => {
       if (e.code === 4001) {
         intent.current = null;
         setStatus("opened in another tab");
         return;
       }
-      if (intent.current) reconnect.current = setTimeout(connect, 1800);
-      else setStatus("not connected");
+      setStatus(intent.current ? "reconnecting" : "not connected");
+      if (intent.current) retry.current = setTimeout(connect, 1800);
     };
-    sock.onerror = () => setStatus("connecting · waking server");
+    socket.onerror = () => setStatus("connecting · waking server");
   };
   useEffect(() => {
     const saved = sessionStorage.getItem("ft-session");
-    if (saved) {
+    if (saved)
       try {
         const s = JSON.parse(saved);
         if (!code || code === s.code) {
@@ -127,54 +146,74 @@ function App() {
           connect();
         }
       } catch {}
-    }
-    const tick = setInterval(() => setNow(Date.now()), 100);
-    const ping = setInterval(
-      () => send({ type: "ping", client_time: Date.now() / 1000 }),
-      5000,
-    );
+    const tick = setInterval(() => setNow(Date.now()), 100),
+      ping = setInterval(
+        () => send({ type: "ping", client_time: Date.now() / 1000 }),
+        5000,
+      );
     return () => {
+      intent.current = null;
       clearInterval(tick);
       clearInterval(ping);
-      intent.current = null;
-      if (reconnect.current) clearTimeout(reconnect.current);
+      if (retry.current) clearTimeout(retry.current);
       if (configTimer.current) clearTimeout(configTimer.current);
       ws.current?.close();
     };
   }, []);
-  const own = state?.players.find((p) => p.id === me),
-    host = state?.host === me,
-    construction = state?.phase === "construction";
-  const change = (gs: Generator[]) => {
-    setGenerators(gs);
-    send({
-      type: "configure",
-      round: state?.round,
-      match: state?.match,
-      angle: angleRef.current,
-      generators: gs,
-    });
-  };
   const join = (type: string) => {
     setError("");
     localStorage.setItem("ft-name", name);
     intent.current = { type, name, code: code.trim().toUpperCase() };
     connect();
   };
-  const seconds = state?.deadline
-    ? Math.max(0, Math.ceil(state.deadline - now / 1000 - offset))
-    : 0;
-  const best = Math.max(...(state?.players.map((p) => p.score) || [0]));
-  const winners = state?.players.filter((p) => p.score === best) || [];
+  const change = (gs: Generator[]) => {
+    genRef.current = gs;
+    setGenerators(gs);
+    send({
+      type: "configure",
+      match: state?.match,
+      round: state?.round,
+      angle: angleRef.current,
+      generators: gs,
+    });
+  };
+  const aim = (a: number) => {
+    angleRef.current = a;
+    setAngle(a);
+    send({
+      type: "configure",
+      match: state?.match,
+      round: state?.round,
+      angle: a,
+      generators: genRef.current,
+    });
+  };
+  const own = state?.players.find((p) => p.id === me),
+    host = state?.host === me,
+    live = state?.phase === "simulation",
+    editable = live || state?.phase === "construction",
+    active = editable || state?.phase === "results",
+    seconds = state?.deadline
+      ? Math.max(0, Math.ceil(state.deadline - now / 1000 - offset))
+      : 0,
+    best = Math.max(
+      ...(state?.players.map((p) => Math.round(p.score * 10)) || [0]),
+    ),
+    winners =
+      state?.players.filter((p) => Math.round(p.score * 10) === best) || [],
+    liveTime = state?.live?.time ?? 0;
   return (
-    <main>
+    <main className={active ? "playing" : ""}>
       <header>
         <a href="/" className="wordmark">
           FIELD THEORY<span>a game of invisible forces</span>
         </a>
-        <div className="connection">
-          <i className={status === "connected" ? "online" : ""} />
-          {status}
+        <div className="header-actions">
+          <button onClick={() => setRules(true)}>how to play</button>
+          <div className="connection">
+            <i className={status === "connected" ? "online" : ""} />
+            {status}
+          </div>
         </div>
       </header>
       <section className="intro">
@@ -190,11 +229,14 @@ function App() {
                   : winners[0]?.id === me
                     ? "You found your flow."
                     : `${winners[0]?.name} found the flow.`
-                : "Place your fields.\nLet physics take over."}
+                : live
+                  ? "Keep the stream flowing."
+                  : "Shape the field."}
         </h1>
         <p>
           Red repels. Blue attracts. Purple bends moving particles.
-          <br />A shared arena. Five rounds. One elegant experiment.
+          <br />
+          Three rounds. Live controls. A minute to find your flow.
         </p>
       </section>
       <div className="game-layout">
@@ -205,7 +247,7 @@ function App() {
               {state
                 ? state.phase === "lobby"
                   ? "waiting for players"
-                  : `ROUND ${state.round} / 5`
+                  : `ROUND ${state.round} / ${state.rules?.rounds ?? 3}`
                 : "02 — 04 PLAYERS"}
             </span>
           </div>
@@ -213,19 +255,20 @@ function App() {
             <Arena
               state={state}
               me={me}
-              offset={offset}
               generators={generators}
+              angle={angle}
               onChange={change}
+              onAim={aim}
               kind={kind}
+              mode={mode}
             />
             {state && (
               <div className="phase-pill">
                 {
                   (
                     {
-                      construction: "place your fields",
-                      simulation: "simulating…",
-                      computing: "calculating curves…",
+                      construction: "quick setup",
+                      simulation: "live · aim & move your fields",
                       results: "round over",
                       finished: "match complete",
                       lobby: "waiting for players",
@@ -235,20 +278,33 @@ function App() {
                 {state.deadline && <b>{seconds}s</b>}
               </div>
             )}
+            {state?.notices.map((n, i) => (
+              <div
+                className="pickup-notice"
+                style={{ bottom: 15 + i * 26 }}
+                key={n.text + n.until}
+              >
+                {n.text}
+              </div>
+            ))}
           </div>
           <div className="arena-footer">
             <span>F = q(E + v × B)</span>
             <span>
-              {construction
-                ? "tap to place · drag to move"
-                : "the smallest forces change everything"}
+              {editable
+                ? mode === "aim"
+                  ? "drag arena to aim · drag your fields to move"
+                  : "tap to place · drag your fields to move"
+                : "solid outline + “you” label = your fields"}
             </span>
           </div>
         </section>
         <aside>
+          <div className="panel-number">
+            {editable ? "02 / LIVE CONTROLS" : "01 / YOUR ROOM"}
+          </div>
           {!state ? (
             <>
-              <div className="panel-number">01 / ENTER THE FIELD</div>
               <h2>
                 Bring a friend.
                 <br />
@@ -267,7 +323,7 @@ function App() {
                 disabled={!name.trim() || status.startsWith("connecting")}
                 onClick={() => join("create")}
               >
-                create a room <span>↗</span>
+                create a room ↗
               </button>
               <div className="or">or join your friends</div>
               <label htmlFor="code">room code</label>
@@ -280,7 +336,11 @@ function App() {
                   placeholder="ABCDE"
                 />
                 <button
-                  disabled={!name.trim() || code.length !== 5}
+                  disabled={
+                    !name.trim() ||
+                    code.length !== 5 ||
+                    status.startsWith("connecting")
+                  }
                   onClick={() => join("join")}
                 >
                   join →
@@ -290,15 +350,10 @@ function App() {
             </>
           ) : (
             <>
-              <div className="panel-number">
-                {state.phase === "construction"
-                  ? "02 / SHAPE THE FIELD"
-                  : "01 / YOUR ROOM"}
-              </div>
               <div className="room-heading">
                 <h2>{state.code}</h2>
                 <button
-                  onClick={() => {
+                  onClick={() =>
                     navigator.clipboard
                       .writeText(location.href)
                       .then(() => {
@@ -306,9 +361,9 @@ function App() {
                         setTimeout(() => setCopied(false), 2000);
                       })
                       .catch(() =>
-                        setError("copy the room URL from your address bar"),
-                      );
-                  }}
+                        setError("copy the URL from your address bar"),
+                      )
+                  }
                 >
                   {copied ? "copied" : "copy invite ↗"}
                 </button>
@@ -318,27 +373,35 @@ function App() {
                   <div className="player" key={p.id}>
                     <i style={{ background: colors[i] }} />
                     <span>
+                      <b className="player-number" style={{ color: colors[i] }}>
+                        {i + 1}
+                      </b>
                       {p.name}
                       {p.id === me ? " (you)" : ""}
                       <small>
                         {!p.connected
                           ? "disconnected"
-                          : p.ready
+                          : state.phase === "construction" && p.ready
                             ? "ready"
-                            : p.id === state.host
-                              ? "host"
-                              : "connected"}
+                            : state.phase === "simulation"
+                              ? "live"
+                              : p.id === state.host
+                                ? "host"
+                                : "connected"}
                       </small>
                     </span>
-                    <strong>{p.score}</strong>
+                    <strong>
+                      {p.score.toFixed(1)}
+                      <small>pressure s</small>
+                    </strong>
                   </div>
                 ))}
               </div>
               {state.phase === "lobby" && (
                 <>
                   <p className="hint">
-                    Share the room code. The host starts when everyone has
-                    arrived.
+                    Share the code. Three rounds of live play. No waiting for a
+                    trajectory to finish before making your next move.
                   </p>
                   {host ? (
                     <button
@@ -355,17 +418,33 @@ function App() {
                   )}
                 </>
               )}
-              {construction && (
-                <>
-                  <label>
-                    choose a field <span>{generators.length}/2 placed</span>
-                  </label>
+              {editable && (
+                <div className="controls">
+                  <div className="mode-switch">
+                    <button
+                      className={mode === "aim" ? "selected" : ""}
+                      onClick={() => setMode("aim")}
+                    >
+                      ↗ aim cannon
+                    </button>
+                    <button
+                      className={mode === "place" ? "selected" : ""}
+                      onClick={() => setMode("place")}
+                    >
+                      ＋ place fields
+                    </button>
+                  </div>
                   <div className="tools">
                     {(["positive", "negative", "coil"] as const).map((k, i) => (
                       <button
-                        className={kind === k ? "selected" : ""}
+                        className={
+                          kind === k && mode === "place" ? "selected" : ""
+                        }
                         key={k}
-                        onClick={() => setKind(k)}
+                        onClick={() => {
+                          setKind(k);
+                          setMode("place");
+                        }}
                       >
                         <b
                           style={{
@@ -379,25 +458,31 @@ function App() {
                     ))}
                   </div>
                   <div className="placed">
+                    <span className="fine">
+                      your fields {generators.length}/2
+                    </span>
                     {generators.map((g, i) => (
                       <button
                         key={i}
                         onClick={() =>
-                          change(generators.filter((_, j) => i !== j))
+                          change(generators.filter((_, j) => j !== i))
                         }
                       >
+                        {i + 1} ·{" "}
                         {g.kind === "coil"
                           ? "coil"
                           : g.kind === "positive"
-                            ? "+ charge"
-                            : "− charge"}{" "}
+                            ? "+"
+                            : "−"}{" "}
                         ×
                       </button>
                     ))}
                   </div>
                   <label htmlFor="aim">
                     firing angle{" "}
-                    <span>{Math.round((angle * 180) / Math.PI)}°</span>
+                    <span>
+                      {Math.round(((angle * 180) / Math.PI + 360) % 360)}°
+                    </span>
                   </label>
                   <input
                     id="aim"
@@ -405,43 +490,54 @@ function App() {
                     min="0"
                     max="360"
                     value={((angle * 180) / Math.PI + 360) % 360}
-                    onChange={(e) => {
-                      const a = (+e.target.value * Math.PI) / 180;
-                      setAngle(a);
-                      send({
-                        type: "configure",
-                        round: state.round,
-                        match: state.match,
-                        angle: a,
-                        generators: genRef.current,
-                      });
-                    }}
+                    onChange={(e) => aim((+e.target.value * Math.PI) / 180)}
                   />
-                  <button
-                    className="primary"
-                    onClick={() =>
-                      send({
-                        type: own?.ready ? "configure" : "ready",
-                        round: state.round,
-                        match: state.match,
-                        angle,
-                        generators,
-                      })
-                    }
-                  >
-                    {own?.ready ? "ready ✓ · edit" : "ready to launch ↗"}
-                  </button>
+                  {state.phase === "construction" ? (
+                    <button
+                      className="primary"
+                      onClick={() =>
+                        send({
+                          type: own?.ready ? "configure" : "ready",
+                          round: state.round,
+                          match: state.match,
+                          angle: angleRef.current,
+                          generators: genRef.current,
+                        })
+                      }
+                    >
+                      {own?.ready ? "ready ✓ · edit" : "ready · start early ↗"}
+                    </button>
+                  ) : (
+                    <p className="live-hint">
+                      ● firing continuously · controls stay live
+                    </p>
+                  )}
+                  <div className="effects">
+                    {Object.entries(own?.effects ?? {})
+                      .filter(([, until]) => until > liveTime)
+                      .map(([kind, until]) => (
+                        <span
+                          className={
+                            ["slow", "weaken", "drift"].includes(kind)
+                              ? "harmful"
+                              : ""
+                          }
+                          key={kind}
+                        >
+                          {effectNames[kind]} · {Math.ceil(until - liveTime)}s
+                        </span>
+                      ))}
+                  </div>
                   <p className="fine">
-                    up to two fields · one coil · fixed launch power
+                    hit labeled pickups · effects last 6s · one coil max
                   </p>
-                </>
+                </div>
               )}
               {state.phase === "results" && (
                 <p className="hint">
-                  {state.playback?.events.filter((e) => e.scored).length || 0}{" "}
-                  hits this round.{" "}
-                  {state.round < 5
-                    ? "Next round begins shortly."
+                  Pressure earned.{" "}
+                  {state.round < 3
+                    ? "Next round starts shortly."
                     : "Final scores coming up."}
                 </p>
               )}
@@ -451,7 +547,7 @@ function App() {
                     {winners.length > 1
                       ? "shared victory"
                       : `${winners[0]?.name} wins`}{" "}
-                    · {best} points
+                    · {(best / 10).toFixed(1)} pressure seconds
                   </p>
                   {host && (
                     <button
@@ -470,6 +566,7 @@ function App() {
                   sessionStorage.removeItem("ft-session");
                   ws.current?.close();
                   setState(null);
+                  current.current = null;
                   history.replaceState(null, "", "/");
                   setStatus("not connected");
                 }}
@@ -491,32 +588,33 @@ function App() {
           <span>01</span>
           <h3>Arrange the invisible.</h3>
           <p>
-            Place two fields outside the protected reactor circles. Everyone
-            shares the same forces.
+            Eight seconds to start. Place two fields; your numbered badges and
+            “you” labels show what you control.
           </p>
         </div>
         <div>
           <span>02</span>
-          <h3>Find your angle.</h3>
+          <h3>Stay in the flow.</h3>
           <p>
-            Aim your particle, then get ready. You have twenty seconds to set
-            things in motion.
+            Your cannon never stops. Aim and move fields for sixty seconds.
+            Rival streams push one another aside.
           </p>
         </div>
         <div>
           <span>03</span>
-          <h3>Let the curves decide.</h3>
+          <h3>Chase the advantage.</h3>
           <p>
-            All particles launch together. Hit an opponent’s reactor to score.
-            Most points after five rounds wins.
+            Hit labeled pickups to boost yourself or disrupt rivals. Sustained
+            reactor contact earns pressure seconds.
           </p>
         </div>
       </section>
       <footer>
         <span>FIELD THEORY</span>
-        <span>less control. more possibility.</span>
+        <button onClick={() => setRules(true)}>rules & boosters ↗</button>
         <span>built on classical physics</span>
       </footer>
+      {rules && <Rules close={() => setRules(false)} />}
     </main>
   );
 }

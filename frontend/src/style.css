@@ -447,3 +447,365 @@ input[type="range"] {
     font-size: 8px;
   }
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.header-actions > button {
+  font-size: 11px;
+}
+.player-number {
+  margin-right: 7px;
+  font-size: 10px;
+}
+.player strong small {
+  display: block;
+  font-size: 8px;
+  font-weight: 400;
+  color: #8e9783;
+  letter-spacing: 0.3px;
+}
+.playing .intro {
+  padding: 18px 0 12px;
+}
+.playing h1 {
+  font-size: 26px;
+  letter-spacing: -0.8px;
+  margin: 8px 0;
+}
+.playing .intro .eyebrow,
+.playing .intro > p {
+  display: none;
+}
+.mode-switch {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0 10px;
+}
+.mode-switch button {
+  flex: 1;
+  font-size: 11px;
+  padding: 8px;
+}
+.selected {
+  background: #e4ead9;
+  border-color: #869571;
+}
+.placed {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.controls label {
+  margin-top: 12px;
+}
+.live-hint {
+  font-size: 11px;
+  color: #657d51;
+  margin: 10px 0;
+}
+.effects {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.effects > span {
+  font-size: 10px;
+  background: #e3ead8;
+  color: #536d3c;
+  border-radius: 20px;
+  padding: 6px 8px;
+}
+.effects > span.harmful {
+  background: #efdfd6;
+  color: #995c48;
+}
+.pickup-notice {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  border-radius: 20px;
+  padding: 7px 14px;
+  background: #f8f8eee8;
+  border: 1px solid #dce2d2;
+  white-space: nowrap;
+}
+.rules {
+  border: 1px solid #d8dece;
+  border-radius: 14px;
+  background: #f8f7f1;
+  color: #353a35;
+  width: min(650px, 92vw);
+  max-height: 88vh;
+  padding: 35px;
+  box-shadow: 0 20px 90px #35402c26;
+}
+.rules::backdrop {
+  background: #303b3266;
+  backdrop-filter: blur(3px);
+}
+.rules h2 {
+  font-size: 30px;
+}
+.rules h3 {
+  font-size: 15px;
+  margin-top: 25px;
+}
+.rules h4 {
+  font-size: 12px;
+  font-weight: 500;
+}
+.rules p {
+  color: #68725d;
+  font-size: 13px;
+}
+.rules-close {
+  position: absolute;
+  right: 15px;
+  top: 12px;
+  border: 0;
+  font-size: 23px;
+}
+.booster-rules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.booster-rules > div {
+  background: #e9edde;
+  border-radius: 8px;
+  padding: 12px;
+}
+.booster-rules > div + div {
+  background: #eee4dc;
+}
+footer button {
+  font-size: 9px;
+  min-height: 28px;
+  padding: 0 10px;
+}
+.playing .guide {
+  margin-top: 20px;
+}
+.playing .tools button {
+  padding: 6px;
+}
+.playing .tools b {
+  font-size: 21px;
+  margin: 0;
+}
+.playing .room-heading h2 {
+  margin: 12px 0;
+}
+.playing .player {
+  padding: 8px 0;
+}
+.playing .panel-number {
+  font-size: 8px;
+}
+@media (max-width: 850px) {
+  .playing .game-layout {
+    gap: 8px;
+  }
+  .playing canvas {
+    aspect-ratio: 1.55;
+  }
+  .playing aside {
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+  .playing aside > .panel-number,
+  .playing .room-heading,
+  .playing .guide {
+    display: none;
+  }
+  .playing .players {
+    display: flex;
+    gap: 12px;
+    order: 0;
+  }
+  .playing .player {
+    flex: 1;
+    min-width: 0;
+  }
+  .playing .player > span {
+    font-size: 11px;
+  }
+  .playing .player strong {
+    font-size: 16px;
+  }
+  .playing .controls {
+    order: 1;
+    position: sticky;
+    bottom: 0;
+    background: #f6f5f0f5;
+    padding: 6px 0;
+    border-top: 1px solid #dce0d3;
+    z-index: 5;
+  }
+  .playing .mode-switch {
+    margin: 0 0 6px;
+  }
+  .playing .tools {
+    float: left;
+    width: 49%;
+    margin-right: 3%;
+  }
+  .playing .controls > label {
+    margin: 0 0 5px;
+  }
+  .playing input[type="range"] {
+    width: 48%;
+    min-height: 40px;
+  }
+  .playing .placed {
+    min-height: 32px;
+    margin: 0;
+    width: 48%;
+    float: right;
+  }
+  .playing .controls > .fine,
+  .playing .live-hint {
+    clear: both;
+    margin: 4px 0;
+  }
+  .playing .controls > .primary {
+    clear: both;
+  }
+  .playing .effects {
+    clear: both;
+  }
+  .playing .leave {
+    order: 3;
+    align-self: flex-start;
+    margin: 0;
+  }
+  .playing .error {
+    order: 4;
+  }
+  .playing .arena-footer {
+    padding: 8px 0;
+  }
+  .header-actions {
+    gap: 10px;
+  }
+  .header-actions > button {
+    padding: 7px 9px;
+    font-size: 10px;
+  }
+  .playing header {
+    height: 65px;
+  }
+}
+@media (max-width: 480px) {
+  .header-actions {
+    gap: 7px;
+  }
+  .connection {
+    font-size: 8px;
+    max-width: 85px;
+  }
+  .header-actions > button {
+    font-size: 9px;
+    padding: 5px;
+  }
+  .playing h1 {
+    font-size: 22px;
+  }
+  .playing .intro {
+    padding: 10px 0;
+  }
+  .playing .phase-pill {
+    font-size: 9px;
+    top: 8px;
+    padding: 6px 9px;
+  }
+  .playing .player > span {
+    font-size: 10px;
+  }
+  .playing .player-number {
+    display: none;
+  }
+  .playing .player {
+    gap: 5px;
+  }
+  .playing .player strong {
+    font-size: 14px;
+  }
+  .playing .mode-switch button {
+    font-size: 10px;
+  }
+  .rules {
+    padding: 25px 20px;
+  }
+  .booster-rules {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .playing canvas {
+    aspect-ratio: 1.35;
+  }
+}
+@media (max-width: 850px) {
+  .playing .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+  }
+  .playing .mode-switch {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+  .playing .tools {
+    float: none;
+    width: auto;
+    margin: 0;
+    grid-column: 1;
+    grid-row: 2/4;
+    align-items: stretch;
+  }
+  .playing .tools button {
+    min-height: 54px;
+  }
+  .playing .placed {
+    float: none;
+    width: auto;
+    min-height: 25px;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    gap: 4px;
+  }
+  .playing .controls > label {
+    grid-column: 2;
+    grid-row: 3;
+    margin: 0;
+    align-self: end;
+  }
+  .playing input[type="range"] {
+    grid-column: 1/-1;
+    grid-row: 4;
+    width: 100%;
+    min-height: 26px;
+    margin: 0;
+  }
+  .playing .controls > .primary,
+  .playing .controls > .fine,
+  .playing .controls > .live-hint,
+  .playing .controls > .effects {
+    grid-column: 1/-1;
+    clear: none;
+    margin: 0;
+  }
+  .playing .controls > .primary {
+    margin-top: 2px;
+  }
+  .playing .controls > .fine {
+    font-size: 8px;
+  }
+  .playing .effects:empty {
+    display: none;
+  }
+}

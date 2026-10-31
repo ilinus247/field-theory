@@ -11,20 +11,24 @@ export type Player = {
   connected: boolean;
   angle: number;
   generators: Generator[];
+  effects: Record<string, number>;
 };
-export type Playback = {
-  frames: ([number, number] | null)[][];
-  frame_dt: number;
-  duration: number;
-  start: number;
-  events: {
-    owner: string;
-    target: string;
-    scored: boolean;
-    time: number;
-    x: number;
-    y: number;
-  }[];
+export type Particle = [number, number, number, number];
+export type Live = {
+  time: number;
+  particles: Particle[];
+  contact: boolean[][];
+  scores: number[];
+  interactions: boolean;
+};
+export type Booster = {
+  id: string;
+  kind: string;
+  label: string;
+  target: "self" | "rivals";
+  x: number;
+  y: number;
+  expires: number;
 };
 export type State = {
   code: string;
@@ -36,7 +40,10 @@ export type State = {
   deadline: number | null;
   host: string;
   server_time: number;
-  playback: Playback | null;
+  live: Live | null;
+  boosters: Booster[];
+  notices: { text: string; until: number }[];
+  rules: { rounds: number; setup_seconds: number; live_seconds: number };
 };
 export const centers = (n: number): [number, number][] =>
   n === 2
@@ -56,4 +63,12 @@ export const centers = (n: number): [number, number][] =>
           [0.88, 0.82],
           [0.12, 0.82],
         ];
-export const colors = ["#c77460", "#658da8", "#9482b2", "#9b9e62"];
+export const colors = ["#b86550", "#487d9c", "#8567a8", "#7f873f"];
+export const effectNames: Record<string, string> = {
+  rapid: "rapid fire",
+  power: "double score",
+  shield: "shield",
+  slow: "slow fire",
+  weaken: "weak fields",
+  drift: "aim drift",
+};

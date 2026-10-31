@@ -34,11 +34,12 @@ def test_websocket_match_reconnect_and_independent_rooms():
             a.send_json({"type": "start"})
             receive_state(a, "construction")
             receive_state(b, "construction")
-            for number in range(1, 6):
+            for number in range(1, 4):
                 for ws, angle in [(a, 0), (b, 3.141592653589793)]:
                     ws.send_json(
                         dict(
                             type="ready",
+                            input_seq=number,
                             match=1,
                             round=number,
                             angle=angle,
@@ -47,18 +48,24 @@ def test_websocket_match_reconnect_and_independent_rooms():
                     )
                 sa = receive_state(a, "simulation")
                 sb = receive_state(b, "simulation")
-                assert sa["playback"] == sb["playback"]
+                assert sa["live"] == sb["live"]
+                assert sa["seq"] == sb["seq"]
+                assert sa["rules"] == {
+                    "rounds": 3,
+                    "setup_seconds": 8,
+                    "live_seconds": 60,
+                }
                 assert sa["round"] == number
-                rooms[code].deadline = time.time() - 0.1
+                rooms[code].live.time = 59.9
                 ra = receive_state(a, "results")
                 rb = receive_state(b, "results")
                 assert ra["players"] == rb["players"]
-                assert ra["players"][0]["score"] == number
+                assert ra["players"][0]["score"] >= 0
                 rooms[code].deadline = time.time() - 0.1
-                phase = "finished" if number == 5 else "construction"
+                phase = "finished" if number == 3 else "construction"
                 receive_state(a, phase)
                 final = receive_state(b, phase)
-            assert final["players"][0]["score"] == final["players"][1]["score"] == 5
+            assert final["players"][0]["score"] == final["players"][1]["score"] == 0
             a.send_json({"type": "rematch"})
             receive_state(a, "construction")
             receive_state(b, "construction")
@@ -73,11 +80,14 @@ def test_websocket_match_reconnect_and_independent_rooms():
                 refreshed.send_json(
                     dict(type="ready", match=1, round=0, angle=0, generators=[])
                 )
-                assert refreshed.receive_json()["type"] == "error"
+                while refreshed.receive_json()["type"] != "error":
+                    pass
                 refreshed.send_text("{broken")
-                assert refreshed.receive_json()["type"] == "error"
+                while refreshed.receive_json()["type"] != "error":
+                    pass
                 refreshed.send_text("[]")
-                assert refreshed.receive_json()["type"] == "error"
+                while refreshed.receive_json()["type"] != "error":
+                    pass
 
 
 def test_bad_code_and_origin():

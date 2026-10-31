@@ -1,11 +1,8 @@
-"""Run against an actual WSS server. Creates temporary rooms; never logs player tokens.
+"""Three real 60-second rounds through WebSockets; validates live input and shared snapshots.
 Usage: python tests/live_smoke.py [wss://host/ws] [https://frontend-origin]
 """
 
-import asyncio
-import json
-import sys
-import time
+import asyncio, json, sys, time, math
 from websockets.asyncio.client import connect
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "wss://field-theory.onrender.com/ws"
@@ -16,70 +13,142 @@ ORIGIN = (
 )
 
 
-async def receive(ws, phase=None):
+async def message(ws):
+    m = json.loads(await asyncio.wait_for(ws.recv(), 30))
+    if m["type"] == "error":
+        raise AssertionError(m["message"])
+    return m
+
+
+async def state(ws, phase=None):
     while True:
-        msg = json.loads(await asyncio.wait_for(ws.recv(), 50))
-        if msg["type"] == "error":
-            raise AssertionError(msg["message"])
-        if msg["type"] == "state" and (phase is None or msg["state"]["phase"] == phase):
-            return msg["state"]
+        m = await message(ws)
+        if m["type"] == "state" and (phase is None or m["state"]["phase"] == phase):
+            return m["state"]
 
 
 async def send(ws, data):
     await ws.send(json.dumps(data))
 
 
+async def paired(a, b):
+    sa, sb = await asyncio.gather(state(a), state(b))
+    while sa["seq"] != sb["seq"]:
+        if sa["seq"] < sb["seq"]:
+            sa = await state(a)
+        else:
+            sb = await state(b)
+    assert sa == sb, "authoritative snapshots diverged"
+    return sa
+
+
 async def main():
-    start = time.perf_counter()
-    async with connect(URL, origin=ORIGIN) as a, connect(URL, origin=ORIGIN) as b:
-        await send(a, dict(type="create", name="live-test-a"))
-        identity = json.loads(await a.recv())
-        state = await receive(a)
-        code = state["code"]
-        await send(b, dict(type="join", name="live-test-b", code=code))
-        await b.recv()
-        await receive(b)
-        await receive(a)
+    started = time.perf_counter()
+    seq = 0
+    seen_pickups = False
+    seen_particles = False
+    async with connect(URL, origin=ORIGIN, max_size=1_000_000) as a, connect(
+        URL, origin=ORIGIN, max_size=1_000_000
+    ) as b:
+        await send(a, dict(type="create", name="stream-test-a"))
+        identity = await message(a)
+        s = await state(a)
+        code = s["code"]
+        await send(b, dict(type="join", name="stream-test-b", code=code))
+        await message(b)
+        await state(b)
+        await state(a)
         await send(a, dict(type="start"))
-        await receive(a, "construction")
-        await receive(b, "construction")
-        for number in range(1, 6):
-            for ws, angle in [(a, 0), (b, 3.141592653589793)]:
+        await asyncio.gather(state(a, "construction"), state(b, "construction"))
+        for number in range(1, 4):
+            seq += 1
+            for ws, angle in [(a, 0), (b, -math.pi / 2)]:
                 await send(
                     ws,
                     dict(
-                        type="ready", match=1, round=number, angle=angle, generators=[]
+                        type="ready",
+                        match=1,
+                        round=number,
+                        input_seq=seq,
+                        angle=angle,
+                        generators=[],
                     ),
                 )
-            sa, sb = await asyncio.gather(
-                receive(a, "simulation"), receive(b, "simulation")
-            )
-            assert sa["playback"] == sb["playback"] and sa["round"] == number
-            ra, rb = await asyncio.gather(receive(a, "results"), receive(b, "results"))
-            assert (
-                ra["players"] == rb["players"] and ra["players"][0]["score"] == number
-            )
+            await asyncio.gather(state(a, "simulation"), state(b, "simulation"))
+            checks = 0
+            changed = False
+            removed = False
+            while True:
+                s = await paired(a, b)
+                if s["phase"] == "results":
+                    break
+                seen_particles |= bool(s["live"]["particles"])
+                seen_pickups |= bool(s["boosters"])
+                checks += 1
+                if s["live"]["time"] >= 1 and not changed:
+                    seq += 1
+                    await send(
+                        a,
+                        dict(
+                            type="configure",
+                            match=1,
+                            round=number,
+                            input_seq=seq,
+                            angle=0.04,
+                            generators=[dict(kind="negative", x=0.5, y=0.8)],
+                        ),
+                    )
+                    changed = True
+                if s["live"]["time"] >= 3 and not removed:
+                    assert s["players"][0][
+                        "generators"
+                    ], "live placement was not accepted"
+                    seq += 1
+                    await send(
+                        a,
+                        dict(
+                            type="configure",
+                            match=1,
+                            round=number,
+                            input_seq=seq,
+                            angle=0,
+                            generators=[],
+                        ),
+                    )
+                    removed = True
+                if s["live"]["time"] >= 4:
+                    assert not s["players"][0][
+                        "generators"
+                    ], "live removal was not accepted"
+            assert s["live"]["time"] >= 60
             print(
-                f"round {number}: identical playback and scores; {number}–{number}",
+                f'round {number}: {checks} identical live snapshots, scores {[round(p["score"],2) for p in s["players"]]}',
                 flush=True,
             )
-            phase = "finished" if number == 5 else "construction"
-            await asyncio.gather(receive(a, phase), receive(b, phase))
+            end = "finished" if number == 3 else "construction"
+            await asyncio.gather(state(a, end), state(b, end))
+        assert seen_particles and seen_pickups
+        assert any(
+            p["score"] > 0 for p in s["players"]
+        ), "continuous contact never scored"
         await send(a, dict(type="rematch"))
-        await asyncio.gather(receive(a, "construction"), receive(b, "construction"))
-        async with connect(URL, origin=ORIGIN) as refreshed:
+        await asyncio.gather(state(a, "construction"), state(b, "construction"))
+        async with connect(URL, origin=ORIGIN) as fresh:
             await send(
-                refreshed,
+                fresh,
                 dict(
-                    type="join", name="live-test-a", code=code, token=identity["token"]
+                    type="join",
+                    name="stream-test-a",
+                    code=code,
+                    token=identity["token"],
                 ),
             )
-            again = json.loads(await refreshed.recv())
-            assert again["id"] == identity["id"]
-            s = await receive(refreshed)
-            assert len(s["players"]) == 2
+            i = await message(fresh)
+            assert i["id"] == identity["id"]
+            s = await state(fresh)
+            assert len(s["players"]) == 2 and s["match"] == 2
         print(
-            f"PASS: real WSS five-round tie, rematch, refresh identity ({time.perf_counter()-start:.1f}s)",
+            f"PASS: three full live rounds, shared JAX snapshots, live controls, boosters, scoring, rematch, reconnect ({time.perf_counter()-started:.1f}s)",
             flush=True,
         )
 

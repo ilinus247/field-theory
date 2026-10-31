@@ -8,33 +8,45 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from .game import Room, Invalid
-from .physics.simulation import simulate
+from .game import Room, Invalid, ROUNDS
+from .physics.streams import Streams
 
 rooms = {}
 locks = {}
-MAX_ROOMS = 64
+MAX_ROOMS = 16
 origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
 
 async def broadcast(room):
     room.seq += 1
-    room.updated = time.time()
     payload = {"type": "state", "state": room.public()}
-    for p in room.players:
-        if p["socket"]:
-            try:
-                await asyncio.wait_for(p["socket"].send_json(payload), 2)
-            except Exception:
+
+    async def deliver(p):
+        socket = p["socket"]
+        if not socket:
+            return
+        try:
+            await asyncio.wait_for(socket.send_json(payload), 0.2)
+        except Exception:
+            if p["socket"] is socket:
                 p["connected"] = False
                 p["socket"] = None
+            try:
+                await asyncio.wait_for(socket.close(code=1013), 0.1)
+            except Exception:
+                pass
+
+    await asyncio.gather(*(deliver(p) for p in room.players))
+    old_host = room.host
     if not any(p["id"] == room.host and p["connected"] for p in room.players):
         room.host = next((p["id"] for p in room.players if p["connected"]), room.host)
+    if room.host != old_host:
+        await broadcast(room)
 
 
 async def ticker():
     while True:
-        await asyncio.sleep(0.15)
+        started = time.perf_counter()
         for code, room in list(rooms.items()):
             async with locks[code]:
                 now = time.time()
@@ -45,58 +57,55 @@ async def ticker():
                     rooms.pop(code, None)
                     locks.pop(code, None)
                     continue
-                if room.phase == "construction" and (
-                    now >= room.deadline
-                    or all(p["ready"] or not p["connected"] for p in room.players)
-                ):
-                    room.phase = "computing"
-                    await broadcast(room)
-                    room.playback = await asyncio.to_thread(
-                        simulate,
-                        [
-                            {k: p[k] for k in ("id", "angle", "generators")}
-                            for p in room.players
-                        ],
-                    )
-                    room.playback["start"] = time.time() + 1.2
-                    room.phase = "simulation"
-                    room.deadline = room.playback["start"] + 8
-                    await broadcast(room)
-                elif room.deadline and now >= room.deadline:
-                    if room.phase == "simulation":
-                        for e in room.playback["events"]:
-                            if e["scored"]:
-                                next(p for p in room.players if p["id"] == e["owner"])[
-                                    "score"
-                                ] += 1
-                        room.phase = "results"
-                        room.deadline = now + 4
-                        await broadcast(room)
-                    elif room.phase == "results":
-                        if room.round >= 5:
+                if not any(p["connected"] for p in room.players):
+                    continue
+                dirty = False
+                try:
+                    if room.phase == "construction" and (
+                        now >= room.deadline
+                        or all(p["ready"] or not p["connected"] for p in room.players)
+                    ):
+                        room.launch()
+                        dirty = True
+                    elif room.phase == "simulation":
+                        await asyncio.to_thread(room.advance)
+                        dirty = True
+                    elif room.phase == "results" and now >= room.deadline:
+                        dirty = True
+                        if room.round >= ROUNDS:
                             room.phase = "finished"
                             room.deadline = None
                         else:
                             room.construct()
+                    if dirty:
                         await broadcast(room)
+                except Exception:
+                    logging.exception("Room simulation failed")
+                    room.phase = "finished"
+                    room.deadline = None
+                    await broadcast(room)
+        await asyncio.sleep(max(0.001, 0.1 - (time.perf_counter() - started)))
 
 
 @asynccontextmanager
 async def lifespan(app):
     started = time.perf_counter()
+    warm = Streams(4)
     await asyncio.to_thread(
-        simulate,
+        warm.tick,
         [
-            {"id": "warm-a", "angle": 0.0, "generators": []},
-            {"id": "warm-b", "angle": 3.141592653589793, "generators": []},
+            {
+                "id": str(i),
+                "angle": 0.0,
+                "generators": [],
+                "connected": True,
+                "effects": {},
+            }
+            for i in range(4)
         ],
+        [],
     )
     app.state.physics_startup_seconds = time.perf_counter() - started
-    logging.info(
-        "Physics engine %s ready in %.3fs",
-        os.getenv("PHYSICS_ENGINE", "jax"),
-        app.state.physics_startup_seconds,
-    )
     task = asyncio.create_task(ticker())
     yield
     task.cancel()
@@ -119,8 +128,12 @@ def health():
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return {
         "status": "ok",
-        "engine": os.getenv("PHYSICS_ENGINE", "jax") + "-boris",
+        "engine": "jax-live-boris",
         "rooms": len(rooms),
+        "max_tick_ms": round(
+            max((r.last_tick_ms for r in rooms.values()), default=0), 2
+        ),
+        "stream_interactions": True,
         "physics_startup_seconds": round(app.state.physics_startup_seconds, 3),
         "peak_memory_mb": round(
             rss / (1024**2 if sys.platform == "darwin" else 1024), 1
@@ -182,6 +195,7 @@ async def socket(ws: WebSocket):
             )
             if not any(p["id"] == room.host and p["connected"] for p in room.players):
                 room.host = player["id"]
+            room.updated = time.time()
             await broadcast(room)
         async for raw in ws.iter_text():
             try:
@@ -191,6 +205,7 @@ async def socket(ws: WebSocket):
                 if not isinstance(data, dict):
                     raise Invalid("invalid message")
                 now = time.time()
+                room.updated = now
                 player["rate"] = [t for t in player["rate"] if t > now - 1]
                 if len(player["rate"]) >= 30:
                     raise Invalid("slow down")
@@ -208,7 +223,8 @@ async def socket(ws: WebSocket):
                     if player["socket"] is not ws:
                         break
                     room.action(player, data)
-                    await broadcast(room)
+                    if room.phase != "simulation":
+                        await broadcast(room)
             except (Invalid, ValueError, TypeError, KeyError) as e:
                 await ws.send_json(
                     {
@@ -237,6 +253,7 @@ async def socket(ws: WebSocket):
             async with locks[room.code]:
                 player["connected"] = False
                 player["socket"] = None
+                room.updated = time.time()
                 if room.host == player["id"]:
                     room.host = next(
                         (p["id"] for p in room.players if p["connected"]), room.host
