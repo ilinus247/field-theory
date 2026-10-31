@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Arena } from "./Arena";
 import { Rules } from "./Rules";
+import { ControlSender } from "./controlSender";
 import { colors, effectNames, type State, type Generator } from "./types";
 import "./style.css";
 const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -25,8 +26,9 @@ function App() {
   const ws = useRef<WebSocket | null>(null),
     intent = useRef<any>(null),
     retry = useRef<ReturnType<typeof setTimeout> | null>(null),
-    configTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
-    queued = useRef<any>(null),
+    controls = useRef<ControlSender | null>(null),
+    hydrate = useRef(true),
+    lastStateAt = useRef(0),
     sequence = useRef(-1),
     inputSeq = useRef(Date.now() * 1000),
     current = useRef<State | null>(null),
@@ -36,44 +38,60 @@ function App() {
   current.current = state;
   angleRef.current = angle;
   genRef.current = generators;
+  if (!controls.current)
+    controls.current = new ControlSender(
+      () => ws.current,
+      (data) =>
+        Boolean(
+          data &&
+          current.current &&
+          ["construction", "simulation"].includes(current.current.phase) &&
+          data.room_code === current.current.code &&
+          data.match === current.current.match &&
+          data.round === current.current.round,
+        ),
+    );
   const send = (data: any) => {
     if (["configure", "ready"].includes(data.type))
-      data = { ...data, input_seq: ++inputSeq.current };
+      data = {
+        ...data,
+        room_code: current.current?.code,
+        input_seq: ++inputSeq.current,
+      };
     if (data.type === "configure") {
-      queued.current = data;
-      if (!configTimer.current)
-        configTimer.current = setTimeout(() => {
-          configTimer.current = null;
-          if (
-            ws.current?.readyState === WebSocket.OPEN &&
-            ["construction", "simulation"].includes(
-              current.current?.phase ?? "",
-            )
-          )
-            ws.current.send(JSON.stringify(queued.current));
-        }, 80);
+      controls.current!.queue(data);
       return;
     }
-    if (data.type === "ready" && configTimer.current) {
-      clearTimeout(configTimer.current);
-      configTimer.current = null;
+    if (data.type === "ready") {
+      controls.current!.reset();
+      if ((ws.current?.bufferedAmount ?? 0) > 8192) {
+        controls.current!.queue(data);
+        return;
+      }
     }
-    if (ws.current?.readyState === WebSocket.OPEN)
+    if (
+      ws.current?.readyState === WebSocket.OPEN &&
+      (data.type !== "ping" || ws.current.bufferedAmount <= 8192)
+    )
       ws.current.send(JSON.stringify(data));
   };
   const connect = () => {
-    if (!intent.current) return;
+    if (!intent.current || (ws.current && ws.current.readyState < 2)) return;
     setStatus("connecting · waking server");
     fetch(API + "/health").catch(() => {});
     const socket = new WebSocket(API.replace(/^http/, "ws") + "/ws");
+    controls.current!.reset();
     ws.current = socket;
     socket.onopen = () => {
+      if (ws.current !== socket) return;
       setStatus("connected");
       send(intent.current);
     };
     socket.onmessage = (e) => {
+      if (ws.current !== socket) return;
       const d = JSON.parse(e.data);
       if (d.type === "identity") {
+        hydrate.current = true;
         playerId.current = d.id;
         setMe(d.id);
         setCode(d.code);
@@ -91,8 +109,10 @@ function App() {
         const s: State = d.state,
           old = current.current;
         sequence.current = s.seq;
+        lastStateAt.current = Date.now();
         const p = s.players.find((p) => p.id === playerId.current);
         if (
+          hydrate.current ||
           !old ||
           old.code !== s.code ||
           old.round !== s.round ||
@@ -106,6 +126,7 @@ function App() {
             angleRef.current = p.angle;
           }
         }
+        hydrate.current = false;
         current.current = s;
         setState(s);
         setOffset(s.server_time - Date.now() / 1000);
@@ -125,6 +146,8 @@ function App() {
         setOffset(d.server_time - (d.client_time + Date.now() / 1000) / 2);
     };
     socket.onclose = (e) => {
+      if (ws.current !== socket) return;
+      controls.current!.reset();
       if (e.code === 4001) {
         intent.current = null;
         setStatus("opened in another tab");
@@ -133,7 +156,9 @@ function App() {
       setStatus(intent.current ? "reconnecting" : "not connected");
       if (intent.current) retry.current = setTimeout(connect, 1800);
     };
-    socket.onerror = () => setStatus("connecting · waking server");
+    socket.onerror = () => {
+      if (ws.current === socket) setStatus("connecting · waking server");
+    };
   };
   useEffect(() => {
     const saved = sessionStorage.getItem("ft-session");
@@ -156,7 +181,7 @@ function App() {
       clearInterval(tick);
       clearInterval(ping);
       if (retry.current) clearTimeout(retry.current);
-      if (configTimer.current) clearTimeout(configTimer.current);
+      controls.current?.reset();
       ws.current?.close();
     };
   }, []);
@@ -202,6 +227,7 @@ function App() {
     winners =
       state?.players.filter((p) => Math.round(p.score * 10) === best) || [],
     liveTime = state?.live?.time ?? 0;
+  const connectionDelayed = live && now - lastStateAt.current > 2500;
   return (
     <main className={active ? "playing" : ""}>
       <header>
@@ -211,8 +237,12 @@ function App() {
         <div className="header-actions">
           <button onClick={() => setRules(true)}>how to play</button>
           <div className="connection">
-            <i className={status === "connected" ? "online" : ""} />
-            {status}
+            <i
+              className={
+                status === "connected" && !connectionDelayed ? "online" : ""
+              }
+            />
+            {connectionDelayed ? "connection delayed · catching up" : status}
           </div>
         </div>
       </header>

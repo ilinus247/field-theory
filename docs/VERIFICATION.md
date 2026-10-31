@@ -29,3 +29,10 @@ Physical-phone hardware, phone portrait/landscape performance, sustained multi-r
 ## Hosting
 
 Existing ChatGPT Sites frontend and Render Free backend are reused. No paid infrastructure, domains, databases, disks, or billing changes are part of this update. In-memory rooms are lost on deployment/restart. The GitHub repository remains public and MIT licensed.
+
+## Network-delay regression fix
+
+- Reproduced the prior defects: a 120-message delayed control burst generated 91 slowdown errors; a 300 ms outbound write delay marked a player disconnected, disabling their cannon.
+- Added latest-input mailboxes on the server, bounded per-connection snapshot queues and a single writer, burst-tolerant flood protection, browser-side outbound backpressure, and connection-generation guards.
+- Local suite: 27 backend tests and 3 client transport tests passed, plus the production build. Regression tests cover delayed input bursts, latest-state application, slow snapshot delivery with continued emission, bounded queues, replaced-socket close codes, client send cadence, and clearing obsolete controls.
+- `tests/network_recovery.py` exercises a 120-message delayed burst followed by an entire minute of live controls over public WSS. Production execution is recorded after deployment.

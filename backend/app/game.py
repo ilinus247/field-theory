@@ -84,6 +84,7 @@ class Room:
         self.booster_index = 0
         self.random = random.Random(code)
         self.input_seq = {}
+        self.pending_controls = {}
         self.last_tick_ms = 0.0
 
     def public(self):
@@ -91,7 +92,15 @@ class Room:
         return {
             "code": self.code,
             "players": [
-                {k: v for k, v in p.items() if k not in ("token", "socket", "rate")}
+                {
+                    **{
+                        k: v
+                        for k, v in p.items()
+                        if k not in ("token", "socket", "rate", "peer")
+                    },
+                    "generators": [dict(g) for g in p["generators"]],
+                    "effects": dict(p["effects"]),
+                }
                 for p in self.players
             ],
             "phase": self.phase,
@@ -154,6 +163,7 @@ class Room:
         self.next_booster = 6.0
         self.booster_index = 0
         self.input_seq = {}
+        self.pending_controls = {}
         for i, p in enumerate(self.players):
             x, y = reactors(len(self.players))[i]
             p.update(
@@ -231,6 +241,58 @@ class Room:
         if self.live.time >= LIVE_SECONDS:
             self.phase = "results"
             self.deadline = time.time() + 4
+
+    def queue_controls(self, p, data):
+        """Accept the newest complete control state; apply at most once per tick.
+
+        Transport bursts and stale ordinary controls do not warrant user errors.
+        Validation still runs server-side before anything enters the physics state.
+        """
+        if (
+            self.phase not in ("construction", "simulation")
+            or data.get("round") != self.round
+            or data.get("match") != self.match
+        ):
+            return False
+        seq = data.get("input_seq")
+        if (
+            isinstance(seq, bool)
+            or not isinstance(seq, int)
+            or not 0 <= seq <= 9007199254740991
+        ):
+            raise Invalid("invalid control sequence")
+        pending = self.pending_controls.get(p["id"])
+        newest = max(
+            self.input_seq.get(p["id"], -1), pending["input_seq"] if pending else -1
+        )
+        if seq <= newest:
+            return False
+        angle, generators = validate_config(data, len(self.players))
+        self.pending_controls[p["id"]] = {
+            "type": "configure",
+            "match": self.match,
+            "round": self.round,
+            "input_seq": seq,
+            "angle": angle,
+            "generators": generators,
+        }
+        return True
+
+    def flush_controls(self):
+        pending = self.pending_controls
+        self.pending_controls = {}
+        for p in self.players:
+            data = pending.get(p["id"])
+            if (
+                not data
+                or self.phase not in ("construction", "simulation")
+                or data["match"] != self.match
+                or data["round"] != self.round
+            ):
+                continue
+            if data["input_seq"] <= self.input_seq.get(p["id"], -1):
+                continue
+            self.action(p, data)
 
     def action(self, p, data):
         action = data.get("type")

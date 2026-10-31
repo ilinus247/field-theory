@@ -10,6 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from .game import Room, Invalid, ROUNDS
 from .physics.streams import Streams
+from .transport import Peer, BurstLimit
 
 rooms = {}
 locks = {}
@@ -18,30 +19,15 @@ origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
 
 async def broadcast(room):
-    room.seq += 1
-    payload = {"type": "state", "state": room.public()}
-
-    async def deliver(p):
-        socket = p["socket"]
-        if not socket:
-            return
-        try:
-            await asyncio.wait_for(socket.send_json(payload), 0.2)
-        except Exception:
-            if p["socket"] is socket:
-                p["connected"] = False
-                p["socket"] = None
-            try:
-                await asyncio.wait_for(socket.close(code=1013), 0.1)
-            except Exception:
-                pass
-
-    await asyncio.gather(*(deliver(p) for p in room.players))
-    old_host = room.host
+    # No network waits while holding room locks. A delayed viewer drops old frames.
     if not any(p["id"] == room.host and p["connected"] for p in room.players):
         room.host = next((p["id"] for p in room.players if p["connected"]), room.host)
-    if room.host != old_host:
-        await broadcast(room)
+    room.seq += 1
+    payload = {"type": "state", "state": room.public()}
+    for p in room.players:
+        peer = p.get("peer")
+        if peer and p["connected"]:
+            peer.offer_state(payload)
 
 
 async def ticker():
@@ -59,8 +45,9 @@ async def ticker():
                     continue
                 if not any(p["connected"] for p in room.players):
                     continue
-                dirty = False
+                dirty = bool(room.pending_controls)
                 try:
+                    room.flush_controls()
                     if room.phase == "construction" and (
                         now >= room.deadline
                         or all(p["ready"] or not p["connected"] for p in room.players)
@@ -129,6 +116,7 @@ def health():
     return {
         "status": "ok",
         "engine": "jax-live-boris",
+        "network_revision": "queued-controls-v1",
         "rooms": len(rooms),
         "max_tick_ms": round(
             max((r.last_tick_ms for r in rooms.values()), default=0), 2
@@ -149,6 +137,9 @@ async def socket(ws: WebSocket):
     await ws.accept()
     room = None
     player = None
+    peer = None
+    wire_limit = BurstLimit()
+    admin_limit = BurstLimit(rate=4, capacity=12)
     try:
         raw = await asyncio.wait_for(ws.receive_text(), 15)
         if len(raw) > 4096:
@@ -177,15 +168,18 @@ async def socket(ws: WebSocket):
         else:
             raise Invalid("create or join a room first")
         async with locks[room.code]:
-            old = player["socket"]
+            old_peer = player.get("peer")
             player["socket"] = ws
             player["connected"] = True
-            if old:
-                try:
-                    await old.close(code=4001)
-                except Exception:
-                    pass
-            await ws.send_json(
+
+            def failed():
+                if player.get("peer") is peer:
+                    player["connected"] = False
+                    room.updated = time.time()
+
+            peer = Peer(ws, failed)
+            player["peer"] = peer
+            peer.offer_message(
                 {
                     "type": "identity",
                     "id": player["id"],
@@ -193,10 +187,10 @@ async def socket(ws: WebSocket):
                     "code": room.code,
                 }
             )
-            if not any(p["id"] == room.host and p["connected"] for p in room.players):
-                room.host = player["id"]
             room.updated = time.time()
             await broadcast(room)
+        if old_peer:
+            await old_peer.stop(code=4001)
         async for raw in ws.iter_text():
             try:
                 if len(raw) > 4096:
@@ -204,29 +198,40 @@ async def socket(ws: WebSocket):
                 data = json.loads(raw)
                 if not isinstance(data, dict):
                     raise Invalid("invalid message")
-                now = time.time()
-                room.updated = now
-                player["rate"] = [t for t in player["rate"] if t > now - 1]
-                if len(player["rate"]) >= 30:
-                    raise Invalid("slow down")
-                player["rate"].append(now)
-                if data.get("type") == "ping":
-                    await ws.send_json(
+                if player.get("peer") is not peer:
+                    break
+                room.updated = time.time()
+                if not wire_limit.allow():
+                    logging.warning(
+                        "Excessive WebSocket traffic; closing one connection"
+                    )
+                    await peer.stop(code=1008)
+                    break
+                action = data.get("type")
+                if action == "ping":
+                    peer.offer_message(
                         {
                             "type": "pong",
                             "client_time": data.get("client_time"),
-                            "server_time": now,
+                            "server_time": time.time(),
                         }
                     )
                     continue
+                if action == "configure":
+                    # Coalesce before acquiring the simulation lock: delayed packets
+                    # must not build a backlog or be misclassified as rapid input.
+                    room.queue_controls(player, data)
+                    continue
+                if not admin_limit.allow():
+                    continue
                 async with locks[room.code]:
-                    if player["socket"] is not ws:
+                    if player.get("peer") is not peer:
                         break
+                    room.flush_controls()
                     room.action(player, data)
-                    if room.phase != "simulation":
-                        await broadcast(room)
+                    await broadcast(room)
             except (Invalid, ValueError, TypeError, KeyError) as e:
-                await ws.send_json(
+                peer.offer_message(
                     {
                         "type": "error",
                         "message": (
@@ -259,7 +264,10 @@ async def socket(ws: WebSocket):
                         (p["id"] for p in room.players if p["connected"]), room.host
                     )
                 await broadcast(room)
-        try:
-            await ws.close()
-        except Exception:
-            pass
+        if peer:
+            await peer.stop()
+        else:
+            try:
+                await ws.close()
+            except Exception:
+                pass

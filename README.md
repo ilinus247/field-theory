@@ -43,7 +43,7 @@ A pickup appears after six seconds, then approximately every eight seconds. At m
 
 **Backend:** Python, FastAPI, Uvicorn, WebSockets, and **JAX CPU**. One process manages independent rooms with in-memory state. No database or accounts.
 
-**Authority:** the server accepts bounded live control updates, advances the shared physics, detects swept collisions and pickups, applies effects, and awards time-based scores. At 10 Hz it broadcasts a sequenced authoritative snapshot containing particle slots, positions, owner indices, contact, effects, and scores. Clients interpolate snapshots with a 100 ms visual buffer; they never compute authoritative outcomes. Controls are coalesced to 12.5 Hz. Match, round, and monotonically increasing input sequence checks reject stale controls, including after rematches.
+**Authority:** the server accepts bounded live control updates, advances the shared physics, detects swept collisions and pickups, applies effects, and awards time-based scores. At 10 Hz it broadcasts a sequenced authoritative snapshot containing particle slots, positions, owner indices, contact, effects, and scores. Clients interpolate snapshots with a 100 ms visual buffer; they never compute authoritative outcomes. Controls are coalesced to 12.5 Hz in the browser and applied at most once per server tick. Delayed control bursts replace obsolete inputs rather than generating slowdown errors. Each connection has one pending snapshot and a dedicated writer, so a slow viewer cannot block room physics or be disconnected by a brief 200 ms delay. Browser backpressure keeps only the newest unsent controls. Match, round, and monotonically increasing input sequence checks reject stale controls, including after rematches.
 
 **Rooms:** 2–4 players, 16-room cap, random codes and private reconnect tokens, tab-scoped identities that survive refresh, host transfer, input size/rate limits, and five-minute cleanup of abandoned rooms. Disconnected cannons stop emitting. Empty-room simulation pauses to save CPU; reconnecting resumes it. A process restart discards all rooms.
 
@@ -89,8 +89,10 @@ Open http://localhost:5173 in two tabs, choose different names, and join the sam
 ```sh
 pip install pytest httpx websockets
 (cd backend && python -m pytest -q)
+npm --prefix frontend test
 npm --prefix frontend run build
 python tests/live_smoke.py
+python tests/network_recovery.py
 ```
 
 The automated suite covers physics, energy conservation, pairwise repulsion, bounded deterministic emission, sustained scoring, shields and double score, swept pickup collection, all six booster targets, live controls, stale input, validation, multiplayer snapshots, three-round progression, rematches, reconnection, and independent rooms. The live smoke test runs three actual 60-second rounds over WSS and compares authoritative snapshots from two clients while changing controls during play. It creates disposable test rooms and takes a few minutes.
