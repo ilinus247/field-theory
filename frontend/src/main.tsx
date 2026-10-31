@@ -150,6 +150,7 @@ function App() {
     send({
       type: "configure",
       round: state?.round,
+      match: state?.match,
       angle: angleRef.current,
       generators: gs,
     });
@@ -205,7 +206,7 @@ function App() {
                 ? state.phase === "lobby"
                   ? "waiting for players"
                   : `ROUND ${state.round} / 5`
-                : "01 — 04 PLAYERS"}
+                : "02 — 04 PLAYERS"}
             </span>
           </div>
           <div className="arena-wrap">
@@ -410,6 +411,7 @@ function App() {
                       send({
                         type: "configure",
                         round: state.round,
+                        match: state.match,
                         angle: a,
                         generators: genRef.current,
                       });
@@ -421,6 +423,7 @@ function App() {
                       send({
                         type: own?.ready ? "configure" : "ready",
                         round: state.round,
+                        match: state.match,
                         angle,
                         generators,
                       })

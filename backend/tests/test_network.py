@@ -37,7 +37,13 @@ def test_websocket_match_reconnect_and_independent_rooms():
             for number in range(1, 6):
                 for ws, angle in [(a, 0), (b, 3.141592653589793)]:
                     ws.send_json(
-                        dict(type="ready", round=number, angle=angle, generators=[])
+                        dict(
+                            type="ready",
+                            match=1,
+                            round=number,
+                            angle=angle,
+                            generators=[],
+                        )
                     )
                 sa = receive_state(a, "simulation")
                 sb = receive_state(b, "simulation")
@@ -64,7 +70,9 @@ def test_websocket_match_reconnect_and_independent_rooms():
                 assert newid["id"] == identity["id"]
                 s = receive_state(refreshed)
                 assert len(s["players"]) == 2
-                refreshed.send_json(dict(type="ready", round=0, angle=0, generators=[]))
+                refreshed.send_json(
+                    dict(type="ready", match=1, round=0, angle=0, generators=[])
+                )
                 assert refreshed.receive_json()["type"] == "error"
                 refreshed.send_text("{broken")
                 assert refreshed.receive_json()["type"] == "error"

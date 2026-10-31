@@ -88,6 +88,8 @@ The requested frontend publisher is **ChatGPT Sites**. `.openai/hosting.json` po
 
 The backend is configured by `render.yaml`: **Free** web service, one Uvicorn worker, port supplied by Render, `/health` health check, no database or disks. Import the public GitHub repository in Render and explicitly verify the free plan before deployment. `ALLOWED_ORIGINS` must include the exact public frontend origin. Never enable paid upgrades or add payment details for this project.
 
+Render is configured for automatic deployment from `main`, but no webhook-triggered deployment was observed after the public-repository import. Connect the GitHub integration in Render for future automatic updates; until verified, compare the Render deployment commit with GitHub and redeploy explicitly when needed. Sites versions are published separately from the same source checkout.
+
 A `vercel.json` configuration is also supplied if Vercel Hobby is used as an alternative frontend host. It must import this personal GitHub repository and set `VITE_BACKEND_URL` before building.
 
 ### Environment variables
@@ -100,6 +102,10 @@ A `vercel.json` configuration is also supplied if Vercel Hobby is used as an alt
 | `PHYSICS_ENGINE` | backend | `jax` by default; explicit `numpy` fallback |
 
 See `.env.example`. No API keys are required by the game. Hosting/repository credentials belong in platform settings, never source code.
+
+## Verification
+
+See [the executed verification record](docs/VERIFICATION.md). The production JAX backend completed a real five-round WSS match with identical outcomes for both clients, a tie, rematch, and identity recovery. Local automated tests and Linux CI cover physics and room rules. Physical-phone testing and a forced idle cold-start cycle remain unverified.
 
 ## Limits and operations
 

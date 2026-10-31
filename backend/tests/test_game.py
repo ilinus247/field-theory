@@ -23,8 +23,8 @@ def test_room_and_stale_round():
     r.action(a, {"type": "start"})
     assert r.round == 1 and r.phase == "construction"
     with pytest.raises(Invalid):
-        r.action(b, dict(type="ready", round=0, angle=0, generators=[]))
-    r.action(b, dict(type="ready", round=1, angle=math.pi, generators=[]))
+        r.action(b, dict(type="ready", match=1, round=0, angle=0, generators=[]))
+    r.action(b, dict(type="ready", match=1, round=1, angle=math.pi, generators=[]))
     assert b["ready"]
     assert "token" not in str(r.public())
     r.phase = "finished"
@@ -45,3 +45,18 @@ def test_limits_and_host():
         r.add("e")
     with pytest.raises(Invalid):
         r.action(r.players[1], {"type": "start"})
+
+
+def test_previous_match_cannot_overwrite_rematch():
+    r = Room("ABCDE")
+    a = r.add("a")
+    r.add("b")
+    r.action(a, {"type": "start"})
+    r.phase = "finished"
+    r.action(a, {"type": "rematch"})
+    assert r.match == 2 and r.round == 1
+    with pytest.raises(Invalid):
+        r.action(a, dict(type="ready", match=1, round=1, angle=0, generators=[]))
+    assert not a["ready"]
+    r.action(a, dict(type="ready", match=2, round=1, angle=0, generators=[]))
+    assert a["ready"]

@@ -31,6 +31,7 @@ export type State = {
   players: Player[];
   phase: string;
   round: number;
+  match: number;
   seq: number;
   deadline: number | null;
   host: string;
@@ -46,8 +47,8 @@ export const centers = (n: number): [number, number][] =>
     : n === 3
       ? [
           [0.12, 0.5],
-          [0.78, 0.18],
-          [0.78, 0.82],
+          [0.69, 0.1709103465619133],
+          [0.69, 0.8290896534380867],
         ]
       : [
           [0.12, 0.18],

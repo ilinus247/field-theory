@@ -63,3 +63,19 @@ def test_jax_polarity_and_swept_collision():
     p = p.at[0].set(jnp.array([0.847, 0.5]))
     output = kernel(p, v, s, c, a)
     assert int(output[2][0, 0]) == 1
+
+
+def test_three_and_four_player_slots_and_balanced_triangle():
+    from app.physics.simulation import reactors
+
+    for count in (3, 4):
+        players = [dict(id=str(i), angle=i * 1.5, generators=[]) for i in range(count)]
+        result = simulate_jax(players)
+        assert len(result["frames"]) == 241
+        assert all(len(frame) == count for frame in result["frames"])
+        assert all(
+            e["owner"] in {str(i) for i in range(count)} for e in result["events"]
+        )
+    cs = np.array(reactors(3))
+    distances = [np.linalg.norm(cs[i] - cs[(i + 1) % 3]) for i in range(3)]
+    np.testing.assert_allclose(distances, distances[0], atol=1e-12)

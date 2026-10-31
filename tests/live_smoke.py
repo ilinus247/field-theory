@@ -46,7 +46,10 @@ async def main():
         for number in range(1, 6):
             for ws, angle in [(a, 0), (b, 3.141592653589793)]:
                 await send(
-                    ws, dict(type="ready", round=number, angle=angle, generators=[])
+                    ws,
+                    dict(
+                        type="ready", match=1, round=number, angle=angle, generators=[]
+                    ),
                 )
             sa, sb = await asyncio.gather(
                 receive(a, "simulation"), receive(b, "simulation")

@@ -56,6 +56,7 @@ class Room:
         self.players = []
         self.phase = "lobby"
         self.round = 0
+        self.match = 1
         self.seq = 0
         self.deadline = None
         self.playback = None
@@ -71,6 +72,7 @@ class Room:
             ],
             "phase": self.phase,
             "round": self.round,
+            "match": self.match,
             "seq": self.seq,
             "deadline": self.deadline,
             "playback": self.playback,
@@ -126,7 +128,11 @@ class Room:
             self.players = [x for x in self.players if x["connected"]]
             self.construct()
         elif action in ("configure", "ready"):
-            if self.phase != "construction" or data.get("round") != self.round:
+            if (
+                self.phase != "construction"
+                or data.get("round") != self.round
+                or data.get("match") != self.match
+            ):
                 raise Invalid("this round is locked")
             angle, generators = validate_config(data, len(self.players))
             p.update(angle=angle, generators=generators, ready=action == "ready")
@@ -137,6 +143,7 @@ class Room:
             if len(self.players) < 2:
                 raise Invalid("two players needed for rematch")
             self.round = 0
+            self.match += 1
             for x in self.players:
                 x["score"] = 0
             self.construct()
