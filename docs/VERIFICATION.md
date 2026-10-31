@@ -13,7 +13,14 @@ October 31, 2026. This release replaces prerecorded eight-second playback with l
 
 ## Production checks
 
-The previous release was verified over public HTTPS/WSS. The live-stream release requires its own public smoke test after deployment. Run `python tests/live_smoke.py` for three full 60-second rounds with matching snapshots, live placement/removal, scoring, pickup spawning, rematch, and reconnect checks.
+- Public HTTPS frontend loads and the live JAX backend reports `jax-live-boris` with stream interactions enabled.
+- Full public WSS smoke test **passed**: three actual 60-second rounds, 599 identical snapshots per round, live aiming and field placement/removal, labeled pickup spawning, sustained scoring, rematch, and same-identity reconnection. Total test duration: **203.9 seconds**, including results and connection/setup overhead.
+- First test client's cumulative pressure scores after the three rounds: 55.04, 116.08, 171.29. Both clients received identical authoritative snapshots and scores.
+- Two public browser tabs also exercised live aiming, placement, dragging, removal, owner labels, stronger streamlines, the rules modal, and visible pickup/effect labels. A harmful weak-fields effect was observed with its countdown.
+- Production peak process memory was approximately **240 MB**, with observed live batches around **5–7 ms** per 100 ms simulation chunk. Two independent live rooms ran concurrently. Sampled CPU remained below Render's reported instance CPU allowance; these observations are not a sustained-load guarantee.
+- GitHub CI passed for the live-stream source and frontend production build. Render remains on plan `free`, one instance, and the same public GitHub repository.
+
+Reproduce using `python tests/live_smoke.py`.
 
 ## Not certified
 

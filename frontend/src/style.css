@@ -838,7 +838,10 @@ footer button {
   .playing .players {
     display: none;
   }
-  .pickup-notice {
-    bottom: 46px !important;
-  }
+}
+
+.phase-pill,
+.arena-scores,
+.pickup-notice {
+  pointer-events: none;
 }

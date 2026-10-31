@@ -291,7 +291,7 @@ function App() {
             {state?.notices.map((n, i) => (
               <div
                 className="pickup-notice"
-                style={{ bottom: 15 + i * 26 }}
+                style={{ bottom: 46 + i * 26 }}
                 key={n.text + n.until}
               >
                 {n.text}
