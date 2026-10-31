@@ -41,9 +41,11 @@ Bz(r) = B₀ exp(−|r − rc|² / (2σ²))
 
 Parameters are centralized in `simulation.py`: dt = 1/240 s, ε = 0.065, k = 0.018, B₀ = 5, σ = 0.16, initial speed = 0.28, maximum speed = 1.4. Electric acceleration and aggregate magnetic field are bounded. The Boris update splits electric acceleration into two half-kicks around a norm-preserving magnetic velocity rotation. Position advances with the resulting velocity. This is a simplified game integrator, not a Maxwell solver. Swept segment-circle tests prevent fast particles tunneling through reactors. Trajectories are recorded at 30 Hz.
 
-### JAX status
+### JAX CPU implementation
 
-A local JAX 0.6.2 CPU JIT smoke test passed. The current game engine uses NumPy. No JAX game kernel is claimed: deployment reliability and the small four-particle workload take priority. NumPy keeps the dependency footprint small on Render's 512 MB free instance. A compiled JAX alternative remains a possible enhancement after production resource measurements; it is not needed for deterministic server-authoritative outcomes.
+JAX is the default production physics engine. The compiled `jax.jit` kernel runs the full eight seconds in a `jax.lax.scan`; `jax.vmap` batches field evaluation across four particle slots. Eight fixed generator slots and four reactor slots avoid recompilation as players and placements change. Inactive slots are masked. CPU-only execution and float64 preserve numerical accuracy. The server warms the compiled kernel during startup before accepting gameplay. `/health` reports the engine, physics initialization duration, and peak process memory.
+
+The NumPy reference uses the same equations, constants, Boris update, collision rules, and recording cadence. It is available through explicit `PHYSICS_ENGINE=numpy` configuration only if measured deployment problems require a fallback. There is no silent downgrade.
 
 ## Local development
 
@@ -93,6 +95,7 @@ A `vercel.json` configuration is also supplied if Vercel Hobby is used as an alt
 | `VITE_BACKEND_URL` | frontend build | Public HTTPS backend origin; defaults to localhost:8000 for development |
 | `ALLOWED_ORIGINS` | backend | Comma-separated allowed frontend origins, without trailing slashes |
 | `PORT` | backend | Host-provided listening port |
+| `PHYSICS_ENGINE` | backend | `jax` by default; explicit `numpy` fallback |
 
 See `.env.example`. No API keys are required by the game. Hosting/repository credentials belong in platform settings, never source code.
 

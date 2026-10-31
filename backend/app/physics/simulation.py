@@ -49,7 +49,7 @@ def swept(a,b,center,radius=REACTOR_RADIUS):
     return np.linalg.norm(a+t*d-np.array(center)) <= radius
 
 
-def simulate(players):
+def simulate_numpy(players):
     centers=reactors(len(players)); generators=[g for p in players for g in p['generators']]
     positions=[]; velocities=[]
     for p,c in zip(players,centers):
@@ -70,3 +70,12 @@ def simulate(players):
                 events.append({'owner':players[i]['id'],'target':players[j]['id'],'scored':i!=j,'time':step*DT,'x':float(positions[i][0]),'y':float(positions[i][1])})
             elif np.any(positions[i]<0) or np.any(positions[i]>1): alive[i]=False
     return {'frames':frames,'events':events,'frame_dt':8*DT,'duration':DURATION}
+
+
+def simulate(players):
+    """JAX is the default. NumPy is available only through explicit configuration."""
+    import os
+    if os.getenv('PHYSICS_ENGINE', 'jax') == 'numpy':
+        return simulate_numpy(players)
+    from .jax_engine import simulate_jax
+    return simulate_jax(players)

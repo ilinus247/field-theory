@@ -49,6 +49,10 @@ async def ticker():
 
 @asynccontextmanager
 async def lifespan(app):
+    started=time.perf_counter()
+    await asyncio.to_thread(simulate,[{'id':'warm-a','angle':0.,'generators':[]},{'id':'warm-b','angle':3.141592653589793,'generators':[]}])
+    app.state.physics_startup_seconds=time.perf_counter()-started
+    logging.info('Physics engine %s ready in %.3fs',os.getenv('PHYSICS_ENGINE','jax'),app.state.physics_startup_seconds)
     task=asyncio.create_task(ticker())
     yield
     task.cancel()
@@ -59,7 +63,10 @@ app=FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=origins,allow_methods=['GET'],allow_headers=[])
 
 @app.get('/health')
-def health(): return {'status':'ok','engine':'numpy-boris','rooms':len(rooms)}
+def health():
+    import resource,sys
+    rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return {'status':'ok','engine':os.getenv('PHYSICS_ENGINE','jax')+'-boris','rooms':len(rooms),'physics_startup_seconds':round(app.state.physics_startup_seconds,3),'peak_memory_mb':round(rss/(1024**2 if sys.platform=='darwin' else 1024),1)}
 
 @app.websocket('/ws')
 async def socket(ws:WebSocket):
