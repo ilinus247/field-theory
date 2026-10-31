@@ -80,7 +80,7 @@ The network suite uses actual FastAPI WebSocket sessions through TestClient; it 
 
 ## Deployment
 
-The requested frontend publisher is **ChatGPT Sites**. `.openai/hosting.json` points to the generated `frontend/dist` static build. Build with the public backend URL before packaging. Sites source synchronization uses its own provider repository; the public GitHub repository contains the same application source.
+The requested frontend publisher is **ChatGPT Sites**. `.openai/hosting.json` points to the generated `dist` static build. Build with the public backend URL before packaging. Sites source synchronization uses its own provider repository; the public GitHub repository contains the same application source.
 
 The backend is configured by `render.yaml`: **Free** web service, one Uvicorn worker, port supplied by Render, `/health` health check, no database or disks. Import the public GitHub repository in Render and explicitly verify the free plan before deployment. `ALLOWED_ORIGINS` must include the exact public frontend origin. Never enable paid upgrades or add payment details for this project.
 
