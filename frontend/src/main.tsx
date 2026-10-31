@@ -29,7 +29,28 @@ function App() {
     genRef = useRef(generators);
   angleRef.current = angle;
   genRef.current = generators;
+  const queuedConfig = useRef<any>(null);
+  const configTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const send = (v: any) => {
+    // Coalesce pointer/slider updates to 10 Hz while preserving the final position.
+    // Ready carries the complete configuration and cancels pending edits.
+    if (v.type === "configure") {
+      queuedConfig.current = v;
+      if (!configTimer.current)
+        configTimer.current = setTimeout(() => {
+          configTimer.current = null;
+          if (
+            ws.current?.readyState === WebSocket.OPEN &&
+            phase.current === "construction"
+          )
+            ws.current.send(JSON.stringify(queuedConfig.current));
+        }, 100);
+      return;
+    }
+    if (v.type === "ready" && configTimer.current) {
+      clearTimeout(configTimer.current);
+      configTimer.current = null;
+    }
     if (ws.current?.readyState === WebSocket.OPEN)
       ws.current.send(JSON.stringify(v));
   };
@@ -49,7 +70,7 @@ function App() {
         setMe(d.id);
         setCode(d.code);
         intent.current = { type: "join", code: d.code, name, token: d.token };
-        localStorage.setItem("ft-session", JSON.stringify(intent.current));
+        sessionStorage.setItem("ft-session", JSON.stringify(intent.current));
         history.replaceState(null, "", "?room=" + d.code);
         sequence.current = -1;
       }
@@ -59,7 +80,7 @@ function App() {
         setState(s);
         setOffset(s.server_time - Date.now() / 1000);
         if (round.current !== s.round || phase.current !== s.phase) {
-          const id = localStorage.getItem("ft-id");
+          const id = sessionStorage.getItem("ft-id");
           const own = s.players.find((p) => p.id === id);
           if (own) {
             setGenerators(own.generators);
@@ -69,12 +90,12 @@ function App() {
           phase.current = s.phase;
         }
       }
-      if (d.type === "identity") localStorage.setItem("ft-id", d.id);
+      if (d.type === "identity") sessionStorage.setItem("ft-id", d.id);
       if (d.type === "error") {
         setError(d.message);
         if (/not found|full|started|name/.test(d.message)) {
           intent.current = null;
-          localStorage.removeItem("ft-session");
+          sessionStorage.removeItem("ft-session");
           setState(null);
         }
       }
@@ -96,7 +117,7 @@ function App() {
     sock.onerror = () => setStatus("connecting · waking server");
   };
   useEffect(() => {
-    const saved = localStorage.getItem("ft-session");
+    const saved = sessionStorage.getItem("ft-session");
     if (saved) {
       try {
         const s = JSON.parse(saved);
@@ -117,6 +138,7 @@ function App() {
       clearInterval(ping);
       intent.current = null;
       if (reconnect.current) clearTimeout(reconnect.current);
+      if (configTimer.current) clearTimeout(configTimer.current);
       ws.current?.close();
     };
   }, []);
@@ -442,7 +464,7 @@ function App() {
                 className="leave"
                 onClick={() => {
                   intent.current = null;
-                  localStorage.removeItem("ft-session");
+                  sessionStorage.removeItem("ft-session");
                   ws.current?.close();
                   setState(null);
                   history.replaceState(null, "", "/");

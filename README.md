@@ -66,7 +66,7 @@ npm --prefix frontend ci
 npm --prefix frontend run dev
 ```
 
-Open http://localhost:5173. Use independent browser profiles/devices for independent players; tabs sharing local storage intentionally share a reconnect identity.
+Open http://localhost:5173. Each browser tab has an independent player identity in session storage. Refreshing the tab restores that identity.
 
 ## Tests and production build
 
@@ -75,6 +75,8 @@ pip install pytest httpx
 (cd backend && python -m pytest -q)
 npm --prefix frontend run build
 ```
+
+For a real public WSS five-round test: `pip install websockets && python tests/live_smoke.py`. This creates temporary test rooms and verifies identical playback, scoring, ties, rematches, and refresh identity.
 
 CI runs backend tests and the frontend production build. Tests cover field polarity, magnetic curvature and energy preservation, finite integration, determinism, swept collision detection, validation, room limits, stale rounds, independent rooms, five-round scoring/ties, rematches, malformed messages, and reconnect identity.
 
@@ -103,7 +105,7 @@ See `.env.example`. No API keys are required by the game. Hosting/repository cre
 
 Render Free has limited CPU/RAM, shared monthly allowances, idle spin-down, and approximately one-minute cold starts. The frontend displays connection state and retries automatically. Rooms disappear after restart, redeployment, or spin-down. An expired room code requires a new room. This MVP caps active rooms at 64 and room size at four. Empty rooms expire after five minutes. No persistence, spectators, projectile collisions, sound, or trajectory previews are included.
 
-A single browser origin stores one active player identity. Do not share its reconnection token. Anyone with a room code can join an unstarted room. Rate limits are per socket; this is hobby-scale abuse resistance, not a hardened tournament service.
+Each tab stores its own active player identity in session storage. Do not share its reconnection token. Anyone with a room code can join an unstarted room. Rate limits are per socket; this is hobby-scale abuse resistance, not a hardened tournament service.
 
 ## License
 
