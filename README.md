@@ -3,7 +3,10 @@
 A minimalist, account-free multiplayer game of invisible forces. Arrange electric charges and magnetic coils, choose an angle, and let the Lorentz force decide the trajectory.
 
 **Source:** https://github.com/ilinus247/field-theory  
-**Public frontend:** deployment in progress; the verified URL will be recorded here after publication.
+**Public frontend:** https://field-theory.packedbasil2.chatgpt.site  
+**Backend:** https://field-theory.onrender.com
+
+![FIELD THEORY game interface](docs/screenshots/game.jpg)
 
 ## Play
 
