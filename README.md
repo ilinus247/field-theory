@@ -2,7 +2,8 @@
 
 A minimalist, account-free multiplayer game of invisible forces. Steer a continuous charged-particle stream by aiming your cannon and moving electromagnetic fields while the action unfolds.
 
-**[Play FIELD THEORY](https://field-theory.packedbasil2.chatgpt.site)** · **[Public MIT source](https://github.com/ilinus247/field-theory)**  
+**[Play FIELD THEORY](https://field-theory.packedbasil2.chatgpt.site)** · **[Public MIT source](https://github.com/ilinus247/field-theory)**
+
 Backend: https://field-theory.onrender.com
 
 ![FIELD THEORY](docs/screenshots/game.jpg)

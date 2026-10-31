@@ -278,6 +278,16 @@ function App() {
                 {state.deadline && <b>{seconds}s</b>}
               </div>
             )}
+            {active && state && (
+              <div className="arena-scores">
+                {state.players.map((p, i) => (
+                  <span key={p.id} style={{ color: colors[i] }}>
+                    {p.id === me ? "you" : p.name.slice(0, 8)}{" "}
+                    <b>{p.score.toFixed(1)}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             {state?.notices.map((n, i) => (
               <div
                 className="pickup-notice"

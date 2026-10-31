@@ -809,3 +809,36 @@ footer button {
     display: none;
   }
 }
+
+.arena-scores {
+  display: none;
+}
+@media (max-width: 850px) {
+  .playing .controls {
+    background: #f6f5f0;
+    box-shadow: 0 -5px 12px #f6f5f0;
+  }
+  .arena-scores {
+    display: flex;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    gap: 16px;
+    background: #fafaf0e8;
+    padding: 7px 12px;
+    border: 1px solid #dce1d4;
+    border-radius: 20px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .arena-scores b {
+    margin-left: 5px;
+  }
+  .playing .players {
+    display: none;
+  }
+  .pickup-notice {
+    bottom: 46px !important;
+  }
+}
