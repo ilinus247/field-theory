@@ -15,6 +15,7 @@ function App() {
     ),
     [me, setMe] = useState(""),
     [status, setStatus] = useState("not connected"),
+    [serverStatus, setServerStatus] = useState("waking server"),
     [error, setError] = useState(""),
     [kind, setKind] = useState<Generator["kind"]>("positive"),
     [generators, setGenerators] = useState<Generator[]>([]),
@@ -86,6 +87,7 @@ function App() {
     socket.onopen = () => {
       if (ws.current !== socket) return;
       setStatus("connected");
+      setServerStatus("server ready");
       send(intent.current);
     };
     socket.onmessage = (e) => {
@@ -164,9 +166,15 @@ function App() {
   useEffect(() => {
     // Wake the free backend while visitors read the landing page, before joining.
     const wakeup = new AbortController();
-    fetch(API + "/health", { cache: "no-store", signal: wakeup.signal }).catch(
-      () => {},
-    );
+    fetch(API + "/health", { cache: "no-store", signal: wakeup.signal })
+      .then(async (response) => {
+        if (!response.ok || (await response.json()).status !== "ok")
+          throw new Error("backend is not ready");
+        if (!wakeup.signal.aborted) setServerStatus("server ready");
+      })
+      .catch(() => {
+        if (!wakeup.signal.aborted) setServerStatus("server unavailable");
+      });
     const saved = sessionStorage.getItem("ft-session");
     if (saved)
       try {
@@ -235,6 +243,11 @@ function App() {
       state?.players.filter((p) => Math.round(p.score * 10) === best) || [],
     liveTime = state?.live?.time ?? 0;
   const connectionDelayed = live && now - lastStateAt.current > 2500;
+  const connectionLabel = connectionDelayed
+    ? "connection delayed · catching up"
+    : status === "not connected"
+      ? serverStatus
+      : status;
   const controlsSynced = Boolean(
     own &&
     Math.abs(
@@ -258,13 +271,16 @@ function App() {
         </a>
         <div className="header-actions">
           <button onClick={() => setRules(true)}>how to play</button>
-          <div className="connection">
+          <div className="connection" role="status" aria-live="polite">
             <i
               className={
-                status === "connected" && !connectionDelayed ? "online" : ""
+                (status === "connected" && !connectionDelayed) ||
+                connectionLabel === "server ready"
+                  ? "online"
+                  : ""
               }
             />
-            {connectionDelayed ? "connection delayed · catching up" : status}
+            {connectionLabel}
           </div>
         </div>
       </header>
