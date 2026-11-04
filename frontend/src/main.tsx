@@ -162,6 +162,11 @@ function App() {
     };
   };
   useEffect(() => {
+    // Wake the free backend while visitors read the landing page, before joining.
+    const wakeup = new AbortController();
+    fetch(API + "/health", { cache: "no-store", signal: wakeup.signal }).catch(
+      () => {},
+    );
     const saved = sessionStorage.getItem("ft-session");
     if (saved)
       try {
@@ -178,6 +183,7 @@ function App() {
         5000,
       );
     return () => {
+      wakeup.abort();
       intent.current = null;
       clearInterval(tick);
       clearInterval(ping);
