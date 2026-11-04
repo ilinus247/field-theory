@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Arena } from "./Arena";
+import { ArenaPreview } from "./ArenaPreview";
 import { Rules } from "./Rules";
 import { ControlSender } from "./controlSender";
 import { colors, effectNames, type State, type Generator } from "./types";
@@ -454,25 +455,41 @@ function App() {
               </div>
               {state.arena && (
                 <div className="arena-choice">
-                  <label htmlFor="arena-choice">
+                  <div className="arena-choice-label" id="arena-choice-label">
                     arena · stays for the whole match
-                  </label>
+                  </div>
                   {host && ["lobby", "finished"].includes(state.phase) ? (
-                    <select
-                      id="arena-choice"
-                      value={state.arena.id}
-                      onChange={(e) =>
-                        send({ type: "arena", arena: e.target.value })
-                      }
+                    <div
+                      className="arena-options"
+                      role="group"
+                      aria-labelledby="arena-choice-label"
                     >
                       {state.arenas?.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
+                        <button
+                          key={a.id}
+                          className="arena-option"
+                          aria-pressed={state.arena?.id === a.id}
+                          onClick={() => send({ type: "arena", arena: a.id })}
+                        >
+                          <ArenaPreview
+                            arena={a}
+                            players={state.players.length}
+                          />
+                          <span>{a.name}</span>
+                          <small>
+                            {state.arena?.id === a.id ? "selected ✓" : "choose"}
+                          </small>
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   ) : (
-                    <b>{state.arena.name}</b>
+                    <div className="arena-selected-preview">
+                      <ArenaPreview
+                        arena={state.arena}
+                        players={state.players.length}
+                      />
+                      <b>{state.arena.name}</b>
+                    </div>
                   )}
                   <p className="fine">{state.arena.description}</p>
                 </div>

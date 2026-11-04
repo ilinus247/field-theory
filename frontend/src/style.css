@@ -854,13 +854,58 @@ footer button {
 .arena-choice {
   margin: 18px 0;
 }
-.arena-choice select {
-  width: 100%;
-  min-height: 44px;
-  padding: 10px;
+/* Compact map cards use the same normalized fixtures as the authoritative arena. */
+.arena-choice-label {
+  font-size: 11px;
+  color: #737b69;
+  margin-bottom: 10px;
+}
+.arena-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.arena-option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 5px;
+  min-width: 0;
   border: 1px solid #a5ad9670;
-  border-radius: 8px;
-  background: #fafaf3;
-  color: inherit;
-  font: inherit;
+  border-radius: 9px;
+  background: transparent;
+  text-align: center;
+}
+.arena-option[aria-pressed="true"] {
+  background: #e8ecde;
+  border-color: #7c8b68;
+  box-shadow: 0 0 0 1px #7c8b6840;
+}
+.arena-option:focus-visible {
+  outline: 2px solid #61754e;
+  outline-offset: 3px;
+}
+.arena-option span {
+  font-size: 11px;
+  line-height: 1.25;
+}
+.arena-option small {
+  font-size: 9px;
+  color: #77816b;
+  padding-bottom: 3px;
+}
+.arena-thumbnail {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.arena-selected-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.arena-selected-preview .arena-thumbnail {
+  width: 100px;
+  flex: 0 0 100px;
 }

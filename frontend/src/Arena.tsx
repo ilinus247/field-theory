@@ -53,7 +53,7 @@ export function Arena(props: Props) {
       ctx.clearRect(0, 0, w, h);
       const { state: s, me, generators, angle } = current.current,
         ps = s?.players ?? [],
-        cs = centers(ps.length || 2),
+        cs = centers(Math.max(2, ps.length)),
         editable = s?.phase === "construction" || s?.phase === "simulation";
       const gs = s
         ? ps.flatMap((p, owner) =>
