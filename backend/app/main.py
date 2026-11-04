@@ -122,6 +122,7 @@ def health():
             max((r.last_tick_ms for r in rooms.values()), default=0), 2
         ),
         "stream_interactions": True,
+        "arena_revision": "match-arenas-v1",
         "physics_startup_seconds": round(app.state.physics_startup_seconds, 3),
         "peak_memory_mb": round(
             rss / (1024**2 if sys.platform == "darwin" else 1024), 1

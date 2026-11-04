@@ -9,7 +9,12 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as j
 import numpy as np
-from .simulation import reactors, SOFTENING, ELECTRIC_K, MAGNETIC_B, MAGNETIC_SIGMA
+from .simulation import reactors, SOFTENING, ELECTRIC_K
+from ..arenas import fixtures
+
+# Live balance: half the old peak field, with a smaller footprint.
+MAGNETIC_B = 2.5
+MAGNETIC_SIGMA = 0.11
 
 DT = 1 / 120
 SUBSTEPS = 12
@@ -53,6 +58,28 @@ def forces(positions, ttl, sources, interaction):
     return e, b
 
 
+@jax.jit
+def arena_fields(positions, objects):
+    """Gaussian potential wells and magnetic eddies; two fixed fixture slots.
+
+    Lens E = -A d/sigma exp(-r²/2sigma²), a conservative localized well.
+    Vortex B uses the same Gaussian Lorentz rotation as player coils.
+    """
+    d = positions[:, None, :] - objects[None, :, :2]
+    sigma = j.maximum(objects[:, 2], 0.001)
+    envelope = j.exp(-j.sum(d * d, axis=2) / (2 * sigma**2))
+    e = j.sum(
+        -0.9
+        * objects[None, :, 3, None]
+        * d
+        / sigma[None, :, None]
+        * envelope[:, :, None],
+        axis=1,
+    )
+    b = j.sum(2.0 * objects[None, :, 4] * envelope, axis=1)
+    return e, b
+
+
 def segment_dist(a, b, centers):
     d = b - a
     length = j.sum(d * d, axis=1)
@@ -80,6 +107,7 @@ def advance(
     boosters,
     boost_active,
     interaction,
+    arena_objects,
 ):
     """Run 0.1s as twelve compiled steps; controls stay constant within this chunk."""
 
@@ -94,6 +122,12 @@ def advance(
         cursors = (cursors + spawn.astype(j.int32)) % SLOTS
         cooldown = j.where(spawn, intervals, cooldown) - DT
         e, b = forces(p, ttl, sources, interaction)
+        ae, ab = arena_fields(p, arena_objects)
+        e += ae
+        e *= j.minimum(
+            1.0, 3.0 / j.maximum(j.linalg.norm(e, axis=1, keepdims=True), 1e-20)
+        )
+        b = j.clip(b + ab, -20, 20)
         minus = v + e * DT / 2
         t = b[:, None] * DT / 2
         s = 2 * t / (1 + t * t)
@@ -145,8 +179,18 @@ def advance(
 
 
 class Streams:
-    def __init__(self, count, interactions=True):
+    def __init__(self, count, interactions=True, arena="open"):
         self.count = count
+        objects = np.zeros((2, 5))
+        for i, o in enumerate(fixtures(arena)):
+            objects[i] = [
+                o["x"],
+                o["y"],
+                o["radius"],
+                o["strength"] if o["kind"] == "lens" else 0,
+                o["strength"] if o["kind"] == "vortex" else 0,
+            ]
+        self.arena_objects = j.asarray(objects)
         self.time = 0.0
         self.interactions = interactions
         self.centers = np.full((4, 2), -10.0)
@@ -214,6 +258,7 @@ class Streams:
             j.asarray(bpos),
             j.asarray(ba),
             j.asarray(float(self.interactions)),
+            self.arena_objects,
         )
         picked = np.asarray(picked)
         self.time = round(self.time + CHUNK, 6)

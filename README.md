@@ -126,3 +126,18 @@ The service remains on the Free plan. No payment information, paid upgrade, data
 ## License
 
 MIT. Copyright © 2026 ilinus247. See [LICENSE](LICENSE).
+
+### Arena selection and curve balance
+
+The host selects **open field**, **lens garden**, or **eddy court** in the lobby.
+The selection is locked for all three rounds, and can be changed before a rematch.
+Arena fixtures are shared and fixed; they do not consume player field slots.
+
+Lens garden contains two Gaussian attraction wells (radius parameter 0.075).
+Their conservative electric field is `E = -0.9 d / σ exp(-|d|² / 2σ²)`.
+Eddy court contains opposite-sign Gaussian magnetic vortices (`B₀ = ±2`,
+`σ = 0.085`), integrated with the same energy-preserving Boris rotation.
+The drawn circles mark protected placement areas, not hard field cutoffs.
+Player coils now use `B₀ = 2.5` and `σ = 0.11` in live play, down from
+5 and 0.16: half the peak strength with a narrower reach. The original
+one-shot reference engines retain their historical parameters.

@@ -30,7 +30,22 @@ export type Booster = {
   y: number;
   expires: number;
 };
+export type ArenaSetup = {
+  id: string;
+  name: string;
+  description: string;
+  objects: {
+    kind: "lens" | "vortex";
+    label: string;
+    x: number;
+    y: number;
+    radius: number;
+    strength: number;
+  }[];
+};
 export type State = {
+  arena?: ArenaSetup;
+  arenas?: ArenaSetup[];
   code: string;
   players: Player[];
   phase: string;

@@ -124,6 +124,16 @@ export function Arena(props: Props) {
               ex += (q * dx) / den;
               ey += (q * dy) / den;
             }
+            for (const o of s?.arena?.objects ?? []) {
+              if (o.kind !== "lens") continue;
+              const dx = x - o.x,
+                dy = y - o.y;
+              const factor =
+                (((-0.9 / 0.018) * o.strength) / o.radius) *
+                Math.exp(-(dx * dx + dy * dy) / (2 * o.radius ** 2));
+              ex += factor * dx;
+              ey += factor * dy;
+            }
             const n = Math.hypot(ex, ey);
             if (n < 0.01) break;
             x += (ex / n) * 0.006;
@@ -134,6 +144,31 @@ export function Arena(props: Props) {
           ctx.lineWidth = 1.55;
           ctx.stroke();
         }
+      for (const o of s?.arena?.objects ?? []) {
+        const x = o.x * w,
+          y = o.y * h;
+        ctx.fillStyle = o.kind === "lens" ? "#618a9b12" : "#967bb412";
+        ctx.strokeStyle = o.kind === "lens" ? "#618a9b99" : "#967bb499";
+        ctx.lineWidth = 1.3;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.ellipse(x, y, o.radius * w, o.radius * h, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = "22px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = o.kind === "lens" ? "#567e90" : "#87669f";
+        ctx.fillText(
+          o.kind === "lens" ? "◎" : o.strength > 0 ? "↺" : "↻",
+          x,
+          y + 7,
+        );
+        ctx.font = "10px sans-serif";
+        ctx.fillText(o.label, x, y + o.radius * h + 14);
+        ctx.fillStyle = "#777d70";
+        ctx.fillText("arena · fixed", x, y + o.radius * h + 27);
+      }
       cs.forEach(([x, y], i) => {
         const p = ps[i],
           shield = (p?.effects.shield ?? 0) > (s?.live?.time ?? 0),
@@ -326,6 +361,9 @@ export function Arena(props: Props) {
     g.x <= 0.975 &&
     g.y >= 0.025 &&
     g.y <= 0.975 &&
+    (props.state?.arena?.objects ?? []).every(
+      (o) => Math.hypot(o.x - g.x, o.y - g.y) >= o.radius + 0.025,
+    ) &&
     centers(props.state?.players.length || 2).every(
       ([x, y]) => Math.hypot(x - g.x, y - g.y) >= 0.105,
     );

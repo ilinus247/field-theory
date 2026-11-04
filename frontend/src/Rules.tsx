@@ -40,6 +40,16 @@ export function Rules({ close }: { close: () => void }) {
         objects have a solid dark outline and a <b>you</b> label; numbered
         badges match each player’s reactor.
       </p>
+      <h3>Choose your playing field</h3>
+      <p>
+        The host chooses an arena before starting; it stays the same for all
+        three rounds. Open field has no fixed objects. Lens garden has two
+        localized attraction wells. Eddy court has clockwise and
+        counterclockwise magnetic vortices that bend particles without adding
+        speed. These labeled objects belong to the arena: you cannot move them
+        or place fields inside them. The host can choose a different arena
+        before a rematch.
+      </p>
       <h3>Score sustained contact</h3>
       <p>
         Keep your stream hitting opposing reactors to earn pressure seconds.

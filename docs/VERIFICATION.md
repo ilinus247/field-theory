@@ -42,3 +42,19 @@ Existing ChatGPT Sites frontend and Render Free backend are reused. No paid infr
 The live browser reproduced `TypeError: Illegal invocation` in `ControlSender.arm` when moving the angle slider. Storing native browser timers as class members and invoking them as methods supplied an invalid receiver. This prevented control messages from being scheduled even though local controls rendered their new values. Timer wrappers now call the host functions normally. A receiver-sensitive regression test failed before the fix and passed afterward. Four client transport tests and the production build passed. The control panel now distinguishes server-confirmed controls from pending local changes.
 
 After publication, two independent public browser sessions verified the complete path: a 90-degree cannon adjustment changed the authoritative firing direction in the observer, then a charge and coil placed from the first browser appeared in the observer and curved both streams. The first client displayed `controls synced`, confirming server state matched local input. No errors from the repaired client bundle appeared in the browser console. GitHub CI passed with 27 backend and 4 client tests.
+
+### Match arenas and curve balance — November 3, 2026
+
+- 32 backend tests passed (including five new arena/physics tests); four client control tests passed.
+- Production TypeScript/Vite build passed with the Render backend URL.
+- Two independent local browser sessions verified host selection, guest visibility,
+  selection locking on match start, and continued live aiming/stream rendering.
+  No browser console errors were reported in the guest session.
+- New arena tests cover host-only selection, lock across rounds, rematch selection,
+  invalid identifiers, protected fixture placement, pickup clearance, localized lens
+  attraction, opposite eddy rotation, determinism, finite positions, and magnetic
+  energy preservation. The weaker coil still bends a center-crossing test stream
+  without reversing it. Competitive balance remains subject to human playtesting.
+- Focused two-client WebSocket checks passed for both new arenas: 81 identical
+  live snapshots each, synchronized selection, locked selection after start,
+  rejected fixture overlaps, and particles still emitting after eight seconds.

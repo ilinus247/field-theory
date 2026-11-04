@@ -4,13 +4,14 @@ import math
 import secrets
 import time
 from .physics.simulation import reactors, PROTECTED_RADIUS
+from .arenas import ARENAS, fixtures
 
 
 class Invalid(ValueError):
     pass
 
 
-def validate_config(data, count):
+def validate_config(data, count, arena="open"):
     angle = data.get("angle")
     generators = data.get("generators")
     if (
@@ -44,6 +45,11 @@ def validate_config(data, count):
             math.hypot(x - cx, y - cy) < PROTECTED_RADIUS for cx, cy in reactors(count)
         ):
             raise Invalid("keep fields outside reactor circles")
+        if any(
+            math.hypot(x - o["x"], y - o["y"]) < o["radius"] + 0.025
+            for o in fixtures(arena)
+        ):
+            raise Invalid("keep fields outside arena objects")
         coils += g["kind"] == "coil"
         result.append({"kind": g["kind"], "x": x, "y": y})
     if coils > 1:
@@ -71,6 +77,7 @@ class Room:
         self.code = code
         self.players = []
         self.phase = "lobby"
+        self.arena = "open"
         self.round = 0
         self.match = 1
         self.seq = 0
@@ -91,6 +98,8 @@ class Room:
         live = self.live.snapshot() if self.live else None
         return {
             "code": self.code,
+            "arena": ARENAS[self.arena],
+            "arenas": list(ARENAS.values()),
             "players": [
                 {
                     **{
@@ -176,7 +185,7 @@ class Room:
     def launch(self):
         from .physics.streams import Streams
 
-        self.live = Streams(len(self.players))
+        self.live = Streams(len(self.players), arena=self.arena)
         self.phase = "simulation"
         self.deadline = time.time() + LIVE_SECONDS
         self.round_start_scores = [p["score"] for p in self.players]
@@ -186,11 +195,22 @@ class Room:
         for _ in range(50):
             x = self.random.uniform(0.22, 0.78)
             y = self.random.uniform(0.14, 0.86)
-            if all(
-                math.hypot(x - cx, y - cy) > 0.15
-                for cx, cy in reactors(len(self.players))
-            ) and all(math.hypot(x - b["x"], y - b["y"]) > 0.13 for b in self.boosters):
+            if (
+                all(
+                    math.hypot(x - cx, y - cy) > 0.15
+                    for cx, cy in reactors(len(self.players))
+                )
+                and all(
+                    math.hypot(x - b["x"], y - b["y"]) > 0.13 for b in self.boosters
+                )
+                and all(
+                    math.hypot(x - o["x"], y - o["y"]) > o["radius"] + 0.06
+                    for o in fixtures(self.arena)
+                )
+            ):
                 break
+        else:
+            return  # A crowded arena can skip a pickup rather than overlap a fixture.
         kind = list(BOOSTERS)[(self.booster_index + self.round - 1) % len(BOOSTERS)]
         self.booster_index += 1
         label, target = BOOSTERS[kind]
@@ -267,7 +287,7 @@ class Room:
         )
         if seq <= newest:
             return False
-        angle, generators = validate_config(data, len(self.players))
+        angle, generators = validate_config(data, len(self.players), self.arena)
         self.pending_controls[p["id"]] = {
             "type": "configure",
             "match": self.match,
@@ -296,7 +316,14 @@ class Room:
 
     def action(self, p, data):
         action = data.get("type")
-        if action == "start":
+        if action == "arena":
+            if p["id"] != self.host or self.phase not in ("lobby", "finished"):
+                raise Invalid("host chooses the arena before the match")
+            arena = data.get("arena")
+            if not isinstance(arena, str) or arena not in ARENAS:
+                raise Invalid("choose an available arena")
+            self.arena = arena
+        elif action == "start":
             if (
                 p["id"] != self.host
                 or self.phase != "lobby"
@@ -322,7 +349,7 @@ class Room:
                 raise Invalid("stale controls")
             if action == "ready" and self.phase != "construction":
                 raise Invalid("already live — keep aiming")
-            angle, generators = validate_config(data, len(self.players))
+            angle, generators = validate_config(data, len(self.players), self.arena)
             self.input_seq[p["id"]] = seq
             p.update(angle=angle, generators=generators, ready=action == "ready")
         elif action == "rematch":

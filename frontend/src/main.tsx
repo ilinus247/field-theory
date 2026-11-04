@@ -452,6 +452,31 @@ function App() {
                   </div>
                 ))}
               </div>
+              {state.arena && (
+                <div className="arena-choice">
+                  <label htmlFor="arena-choice">
+                    arena · stays for the whole match
+                  </label>
+                  {host && ["lobby", "finished"].includes(state.phase) ? (
+                    <select
+                      id="arena-choice"
+                      value={state.arena.id}
+                      onChange={(e) =>
+                        send({ type: "arena", arena: e.target.value })
+                      }
+                    >
+                      {state.arenas?.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <b>{state.arena.name}</b>
+                  )}
+                  <p className="fine">{state.arena.description}</p>
+                </div>
+              )}
               {state.phase === "lobby" && (
                 <>
                   <p className="hint">

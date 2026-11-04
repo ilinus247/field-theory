@@ -850,3 +850,17 @@ footer button {
   grid-column: 1/-1;
   color: #7a896b;
 }
+
+.arena-choice {
+  margin: 18px 0;
+}
+.arena-choice select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid #a5ad9670;
+  border-radius: 8px;
+  background: #fafaf3;
+  color: inherit;
+  font: inherit;
+}
